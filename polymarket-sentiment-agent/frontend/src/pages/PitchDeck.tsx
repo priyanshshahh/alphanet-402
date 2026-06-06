@@ -58,12 +58,22 @@ const slides: Slide[] = [
     kicker: "Demo",
     title: "402 → sign → settle → 200 OK",
     body: (
-      <ul className="space-y-2 text-muted">
-        <li>Consumer requests the rationale → gets a real <span className="text-accent">402 Payment Required</span>.</li>
-        <li>Privy TEE signs a $0.01 USDC authorization on Base.</li>
-        <li>Facilitator settles; request auto-retries with the X-PAYMENT receipt.</li>
-        <li>Provider returns the Bayesian edge. USDC moved. No human touched it.</li>
-      </ul>
+      <div className="space-y-3">
+        <video
+          src="/signalrelay-demo.webm"
+          controls
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="w-full rounded-lg border border-edge bg-ink"
+        />
+        <div className="text-muted text-[11px]">
+          Live: consumer agent hits a real <span className="text-accent">402</span> → Privy TEE signs a $0.01 USDC
+          authorization → facilitator settles on Base → <span className="text-accent">200 OK</span> Bayesian edge.
+          USDC moved, no human in the loop.
+        </div>
+      </div>
     ),
   },
   {
