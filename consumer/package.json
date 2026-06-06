@@ -1,0 +1,22 @@
+{
+  "name": "alphanet-402-consumer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Privy-authorized consumer agent that pays the AlphaNet-402 Polymarket oracle over x402 (USDC on Base).",
+  "type": "module",
+  "scripts": {
+    "agent": "tsx consumer-agent.ts",
+    "login": "privy-agent-wallets login"
+  },
+  "dependencies": {
+    "@privy-io/node": "^0.4.0",
+    "@privy-io/agent-wallet-cli": "^0.2.0",
+    "@x402/fetch": "^0.5.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.9.0"
+  }
+}
