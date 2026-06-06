@@ -69,9 +69,10 @@ const slides: Slide[] = [
           className="w-full rounded-lg border border-edge bg-ink"
         />
         <div className="text-muted text-[11px]">
-          Live: consumer agent hits a real <span className="text-accent">402</span> → Privy TEE signs a $0.01 USDC
-          authorization → facilitator settles on Base → <span className="text-accent">200 OK</span> Bayesian edge.
-          USDC moved, no human in the loop.
+          Live app: the <span className="text-white">Command Center</span> (Polymarket markets, Bayesian signals,
+          equity curve) then the <span className="text-white">x402 Lab</span> — a real{" "}
+          <span className="text-accent">402</span> → Privy TEE signs $0.01 USDC → facilitator settles on Base →{" "}
+          <span className="text-accent">200 OK</span> Bayesian edge. USDC moved, no human in the loop.
         </div>
       </div>
     ),
