@@ -2,6 +2,9 @@
 
 **Agent-to-agent prediction-market alpha, paid over x402 on Base.**
 
+> ✅ **Live & verified:** a Privy-authorized agent pays **$0.01 USDC on Base Sepolia** per call.
+> On-chain settlement confirmed (wallet debited exactly $0.01). One-command demo: `./run-demo.sh`.
+
 SignalRelay is an autonomous **Polymarket sentiment oracle** that *earns* USDC by selling
 its Bayesian trading edge, and a **Privy-authorized consumer agent** that *spends* USDC to
 hire it — one human approval, then fully autonomous micropayments. No API keys, no
@@ -57,6 +60,12 @@ cp .env.example .env
 echo "X402_PAY_TO=0xYourBaseSepoliaAddress" >> .env   # enables the paywall
 uvicorn app.main:app --port 8000
 # verify: curl -i http://localhost:8000/api/trade/1/rationale  -> 402 Payment Required
+```
+
+### One-command demo (after the provider + tunnel are up)
+```bash
+PROVIDER_URL=https://<your-tunnel>.loca.lt ./run-demo.sh
+# [1] shows live USDC balance  [2] 402 challenge  [3] Privy pays + 200 OK alpha  [4] balance debited $0.01
 ```
 
 ### Terminal B — Consumer (spends, Privy-authorized)
