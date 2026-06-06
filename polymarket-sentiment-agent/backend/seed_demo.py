@@ -68,6 +68,8 @@ def main() -> None:
 
         edge = round(posterior - prior, 4)
         size = 8.0
+        shares = round(size / prior, 4)
+        exit_price = 0.71  # market moved toward our posterior -> a win
         trade = Trade(
             idem_key=IDEM,
             mode="PAPER",
@@ -78,12 +80,15 @@ def main() -> None:
             side="BUY",
             price=prior,
             size_usdc=size,
-            shares=round(size / prior, 4),
+            shares=shares,
             fees_usdc=0.0,
             model_probability=posterior,
             edge=edge,
             signal_id=sig.id,
             snapshot_id=snap.id,
+            closed_at=dt.datetime.utcnow(),
+            exit_price=exit_price,
+            pnl_usdc=round(shares * (exit_price - prior), 2),
             notes="Seeded demo trade for x402 rationale endpoint.",
         )
         s.add(trade)
