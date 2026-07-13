@@ -2,7 +2,7 @@
  * AlphaNet-402 — Consumer Agent
  * -----------------------------
  * The "spender" in the agent-to-agent commerce loop. A downstream trading
- * agent that hires the Polymarket Sentiment Oracle for its Bayesian edge.
+ * agent that hires the AlphaNet-402 equities oracle for its Bayesian edge.
  *
  * Flow (handled automatically by wrapFetchWithPayment):
  *   1. GET /api/trade/{id}/rationale            -> 402 Payment Required

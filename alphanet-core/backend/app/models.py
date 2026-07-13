@@ -1,8 +1,8 @@
 """SQLAlchemy models.
 
-Adapted from the polymarket-sentiment-agent schema. The `AgentState` and
-`log_events` tables are extended to track cumulative daily spend (USDC burned
-on x402 searches) and cumulative x402 API revenue earned, per CURSOR_DOCS.md §1.
+`AgentState` and `log_events` track cumulative daily spend (USDC burned on
+x402 data purchases) and cumulative x402 API revenue earned; `signals` and
+`x402_receipts` are the audit trail behind every sold rationale.
 """
 from __future__ import annotations
 

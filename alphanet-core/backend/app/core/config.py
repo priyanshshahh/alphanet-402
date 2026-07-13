@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # Extra CLI tokens appended after `npx awal x402 pay ...` (chain / flags for your awal version)
     AWAL_X402_PAY_EXTRA: str = "--chain base-sepolia"
 
-    # Guardrails (CURSOR_DOCS.md §1)
+    # Guardrails (documented in docs/PROJECT-NOTES.md)
     MAX_DAILY_SPEND_USDC: float = 2.00
     MAX_PRICE_PER_SEARCH_USDC: float = 0.01
     EDGE_THRESHOLD: float = 0.05

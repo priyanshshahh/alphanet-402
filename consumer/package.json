@@ -2,7 +2,7 @@
   "name": "alphanet-402-consumer",
   "version": "1.0.0",
   "private": true,
-  "description": "Privy-authorized consumer agent that pays the AlphaNet-402 Polymarket oracle over x402 (USDC on Base).",
+  "description": "Privy-authorized consumer agent that pays the AlphaNet-402 equities oracle over x402 (USDC on Base).",
   "type": "module",
   "scripts": {
     "agent": "tsx consumer-agent.ts",
