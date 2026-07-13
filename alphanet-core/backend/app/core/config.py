@@ -56,6 +56,18 @@ class Settings(BaseSettings):
     # Equity tickers the autonomous loop scouts each cycle
     WATCHLIST: str = "AAPL,MSFT,NVDA"
 
+    # CORS: explicit comma-separated origins; never a wildcard. Defaults cover
+    # local dev only — set to the deployed frontend origin(s) in production.
+    ALPHANET_ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def allowed_origins(self) -> List[str]:
+        return [
+            o.strip().rstrip("/")
+            for o in self.ALPHANET_ALLOWED_ORIGINS.split(",")
+            if o.strip() and o.strip() != "*"
+        ]
+
     @property
     def watchlist(self) -> List[str]:
         return [t.strip().upper() for t in self.WATCHLIST.split(",") if t.strip()]

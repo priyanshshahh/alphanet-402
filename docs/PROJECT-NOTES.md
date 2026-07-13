@@ -70,8 +70,9 @@ market-implied probability.
   `GROQ_API_KEY` in the dashboard as needed.
 - **Frontend:** Vercel — root `alphanet-core/frontend`, build `npm run build`,
   output `dist`, env `VITE_API_BASE=https://<render-service>.onrender.com`.
-- CORS is currently `*` on the backend; scope it to the Vercel origin at
-  deploy time if the API stays public.
+- CORS is an explicit allowlist (`ALPHANET_ALLOWED_ORIGINS`, comma-separated;
+  defaults to localhost dev origins, wildcard entries are rejected). Set it to
+  the Vercel origin on the Render service.
 
 ## Dev
 

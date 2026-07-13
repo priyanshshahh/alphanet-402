@@ -117,6 +117,58 @@ def test_demo_payment_header_books_no_revenue(db, monkeypatch):
     assert state.daily_revenue_usdc == 0.0
 
 
+# --- CORS ------------------------------------------------------------------
+def _cors_middleware():
+    from fastapi.middleware.cors import CORSMiddleware
+
+    from app.main import app as app_mod
+
+    for m in app_mod.user_middleware:
+        if m.cls is CORSMiddleware:
+            return m
+    raise AssertionError("CORSMiddleware not registered")
+
+
+def test_cors_wildcard_is_gone():
+    origins = _cors_middleware().kwargs["allow_origins"]
+    assert "*" not in origins
+    assert "http://localhost:5173" in origins
+
+
+def test_cors_preflight_rejects_unknown_origin(db):
+    client = TestClient(app)
+    r = client.options(
+        "/health",
+        headers={
+            "Origin": "https://evil.example.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert r.status_code == 400
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_cors_allows_configured_dev_origin(db):
+    client = TestClient(app)
+    r = client.get("/health", headers={"Origin": "http://localhost:5173"})
+    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_cors_env_origins_honored(monkeypatch):
+    from app.core.config import Settings
+
+    monkeypatch.setenv(
+        "ALPHANET_ALLOWED_ORIGINS",
+        "https://alphanet.vercel.app/, http://localhost:5173 ,*",
+    )
+    s = Settings(_env_file=None)
+    # trailing slash and whitespace normalized, wildcard entries dropped
+    assert s.allowed_origins == [
+        "https://alphanet.vercel.app",
+        "http://localhost:5173",
+    ]
+
+
 def test_health_reports_data_mode(db):
     client = TestClient(app)
     r = client.get("/health")
