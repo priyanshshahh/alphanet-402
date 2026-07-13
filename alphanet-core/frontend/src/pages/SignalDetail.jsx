@@ -74,7 +74,7 @@ export default function SignalDetail() {
         </Panel>
       </section>
 
-      <Panel title="Whale / flow read">
+      <Panel title="Flow / positioning read">
         <p className="text-sm text-slate-200">{sig.whale_action || "—"}</p>
         {sig.source_snippet && (
           <blockquote className="text-xs text-muted border-l-2 border-accent/40 pl-3 mt-3 leading-relaxed">

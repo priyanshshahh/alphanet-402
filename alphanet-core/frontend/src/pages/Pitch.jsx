@@ -4,11 +4,11 @@ export default function Pitch() {
       <header>
         <p className="text-[10px] uppercase tracking-[0.25em] text-muted mb-2">Strategy</p>
         <h1 className="text-2xl md:text-3xl font-semibold text-white tracking-tight">
-          AlphaNet-402 — a mini autonomous crypto hedge fund
+          AlphaNet-402 — an equities research agent that pays for its own data
         </h1>
         <p className="text-muted mt-3 text-sm">
           A decentralized, <strong className="text-white">x402-funded</strong> research agent: it pays
-          per query for live “smart money” signals, validates them with deterministic quant math,
+          per query for market intelligence (free yfinance fundamentals, paid Tavily news), validates it with deterministic quant math,
           enforces risk limits, and sells its alpha back to other machines over USDC on Base.
         </p>
       </header>
@@ -18,7 +18,7 @@ export default function Pitch() {
         <p className="text-muted">
           Traditional funds rent data through long contracts; autonomous agents need{" "}
           <strong className="text-white">metered intelligence</strong> and a settlement rail that works
-          machine-to-machine. AlphaNet-402 is built for that: Tavily for narrative + flow context, Python
+          machine-to-machine. AlphaNet-402 is built for that: yfinance for real prices and fundamentals, Tavily for narrative + flow context, Python
           for beliefs and edges, SQLite for auditability, and HTTP 402 for wholesale alpha.
         </p>
       </section>

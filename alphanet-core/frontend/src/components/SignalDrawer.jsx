@@ -81,7 +81,7 @@ export default function SignalDrawer({ signalId, onClose }) {
               </section>
 
               <section className="bg-edge/50 rounded-xl p-4 border border-edge/80">
-                <div className="text-[10px] text-muted uppercase mb-1">Whale read</div>
+                <div className="text-[10px] text-muted uppercase mb-1">Flow read</div>
                 <p className="text-sm text-slate-200">{sig.whale_action || "—"}</p>
                 {sig.source_snippet && (
                   <p className="text-xs text-muted mt-2 leading-relaxed line-clamp-5">{sig.source_snippet}</p>

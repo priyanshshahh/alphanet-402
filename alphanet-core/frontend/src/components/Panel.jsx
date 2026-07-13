@@ -1,5 +1,5 @@
 /**
- * Layout primitives adapted from polymarket-sentiment-agent/frontend (DOA dashboard).
+ * Shared layout primitives for the AlphaNet-402 Command Center.
  */
 export function Panel({ title, right, children, className = "" }) {
   return (

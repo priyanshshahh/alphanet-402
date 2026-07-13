@@ -45,8 +45,10 @@ export default function Dashboard() {
     await refresh();
   };
 
+  const invoiceTicker = signals[0]?.ticker ?? "AAPL";
+
   const showInvoice = async () => {
-    const inv = await api.invoice("BTC");
+    const inv = await api.invoice(invoiceTicker);
     setInvoice(inv);
   };
 
@@ -65,7 +67,7 @@ export default function Dashboard() {
             <div>
               <div className="font-semibold tracking-wide text-white">AlphaNet-402 · Command Center</div>
               <div className="text-[11px] text-muted mt-0.5 font-mono">
-                {state?.network ?? "…"} · {state?.trading_mode ?? "—"}
+                {state?.network ?? "…"} · {state?.trading_mode ?? "—"} · {state?.data_mode ?? "…"}
               </div>
             </div>
             {state && (
@@ -74,6 +76,7 @@ export default function Dashboard() {
                 <Pill tone={state.halted ? "negative" : state.status === "SCOUTING" ? "warn" : "positive"}>
                   {state.halted ? "HALTED" : state.status}
                 </Pill>
+                {state.demo_mode && <Pill tone="warn">DEMO DATA — synthetic</Pill>}
               </>
             )}
           </div>
@@ -157,7 +160,7 @@ export default function Dashboard() {
           </div>
           {invoice && (
             <pre className="mt-4 rounded-lg bg-ink border border-edge p-3 text-[11px] text-accent/90 overflow-x-auto font-mono">
-              HTTP 402 — alpha rationale (BTC){"\n"}
+              HTTP 402 — alpha rationale ({invoiceTicker}){"\n"}
               {JSON.stringify(invoice, null, 2)}
             </pre>
           )}
@@ -267,8 +270,8 @@ export default function Dashboard() {
         </section>
 
         <footer className="text-center text-muted text-[10px] pb-8 leading-relaxed">
-          CHF-style leakage guards + Poly-style risk caps · Groq extracts JSON only · Tavily 402 via
-          AWAL · Base Sepolia default
+          Real equities data via yfinance · leakage guards + risk caps · Groq extracts JSON only ·
+          Tavily news over x402/AWAL · Base Sepolia default
         </footer>
       </main>
 

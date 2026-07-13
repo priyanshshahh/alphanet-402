@@ -12,3 +12,6 @@ consumer/.env
 polymarket-sentiment-agent/backend/.env
 .DS_Store
 __MACOSX/
+
+# build output
+alphanet-core/frontend/dist/

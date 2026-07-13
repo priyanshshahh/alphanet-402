@@ -4,9 +4,9 @@ export default function Architecture() {
       <div>
         <h1 className="text-2xl font-semibold text-white mb-2">Systems architecture</h1>
         <p className="text-muted">
-          AlphaNet-402 composes a <strong className="text-white">scout</strong> (Tavily 402 + AWAL), a{" "}
+          AlphaNet-402 composes a <strong className="text-white">scout</strong> (yfinance + Tavily 402/AWAL), a{" "}
           <strong className="text-white">quant core</strong> (NLP JSON → log-odds / Bayes), a{" "}
-          <strong className="text-white">CHF-style overseer</strong> (leakage + drawdown), and an{" "}
+          <strong className="text-white">risk overseer</strong> (leakage + drawdown), and an{" "}
           <strong className="text-white">x402 seller</strong> surface for rationales.
         </p>
       </div>
@@ -34,7 +34,7 @@ export default function Architecture() {
       <section className="space-y-3">
         <h2 className="text-lg text-accent font-medium">Routes</h2>
         <ul className="text-muted space-y-1 font-mono text-xs">
-          <li>GET /api/alpha/BTC/rationale — latest signal for ticker</li>
+          <li>GET /api/alpha/AAPL/rationale — latest signal for ticker</li>
           <li>GET /api/trade/123/rationale — blueprint path by signal id</li>
           <li>POST /api/cycle — run one scout pass (demo)</li>
         </ul>

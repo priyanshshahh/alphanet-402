@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { api } from "../api";
 
 export default function X402Lab() {
-  const [ticker, setTicker] = useState("BTC");
+  const [ticker, setTicker] = useState("AAPL");
   const [signalId, setSignalId] = useState("1");
   const [out, setOut] = useState(null);
   const [err, setErr] = useState("");

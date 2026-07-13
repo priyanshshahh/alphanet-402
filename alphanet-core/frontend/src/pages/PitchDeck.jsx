@@ -16,10 +16,10 @@ const SLIDES = [
           AlphaNet<span className="text-accent">-402</span>
         </h1>
         <p className="text-xl md:text-2xl text-slate-300 max-w-2xl mx-auto font-light">
-          The first autonomous, self-funding <span className="text-white font-medium">mini crypto hedge fund</span>{" "}
-          — scout, quantify, risk-manage, settle on Base, sell alpha over HTTP 402.
+          An autonomous, self-funding <span className="text-white font-medium">equities intelligence agent</span>{" "}
+          — scout real market data, quantify, risk-manage, settle on Base, sell alpha over HTTP 402.
         </p>
-        <p className="text-sm text-muted pt-2">FastAPI · React · SQLite · Base · AWAL · Tavily · Groq</p>
+        <p className="text-sm text-muted pt-2">FastAPI · React · SQLite · Base · AWAL · yfinance · Tavily · Groq</p>
       </div>
     ),
   },

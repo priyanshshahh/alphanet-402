@@ -40,8 +40,8 @@ export default function AppShell() {
           ))}
         </nav>
         <div className="p-3 text-[10px] text-muted border-t border-edge leading-relaxed">
-          Repos: <span className="text-muted/80 font-mono">chf</span> +{" "}
-          <span className="text-muted/80 font-mono">polymarket-sentiment-agent</span>
+          Equities intelligence · <span className="text-muted/80 font-mono">x402</span> on{" "}
+          <span className="text-muted/80 font-mono">Base</span>
         </div>
       </aside>
 
