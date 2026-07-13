@@ -1,4 +1,6 @@
-const BASE = "";
+// Same-origin by default (dev server proxies /api); set VITE_API_BASE for a
+// split deploy (e.g. Vercel frontend -> Render backend).
+const BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
 async function j(path, opts = {}) {
   const res = await fetch(BASE + path, opts);

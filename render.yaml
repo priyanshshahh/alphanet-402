@@ -1,18 +1,31 @@
+# Render blueprint — backend API on the free tier.
 # One-click deploy: https://dashboard.render.com/select-repo?type=blueprint
+# The React Command Center deploys separately (Vercel) with
+# VITE_API_BASE pointing at this service's URL.
 services:
   - type: web
-    name: signalrelay
-    runtime: docker
+    name: alphanet-402-api
+    runtime: python
     plan: free
-    rootDir: polymarket-sentiment-agent
-    dockerfilePath: ./Dockerfile
-    healthCheckPath: /healthz
+    rootDir: alphanet-core/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
-      - key: X402_PAY_TO
-        value: "0x5190715b3aFd1076b1416F20e7E64F53B90e054e"
-      - key: FRONTEND_DIST
-        value: /app/frontend_dist
+      - key: PYTHON_VERSION
+        value: 3.12.6
       - key: TRADING_MODE
         value: PAPER
-      - key: DATABASE_URL
-        value: sqlite:////tmp/doa.db
+      - key: WATCHLIST
+        value: AAPL,MSFT,NVDA
+      # Free tier has no persistent disk — sqlite state is ephemeral by design
+      # (signals regenerate every cycle; this is a paper-trading research agent).
+      - key: ALPHANET_DB_PATH
+        value: /tmp/alphanet.db
+      # Set these in the Render dashboard; never committed.
+      - key: OUR_AWAL_WALLET_ADDRESS
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
