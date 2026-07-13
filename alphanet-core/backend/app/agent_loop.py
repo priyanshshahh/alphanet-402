@@ -13,7 +13,7 @@ import uuid
 
 from app.core.config import settings
 from app.database import SessionLocal
-from app.models import AgentState, LogEvent, Signal, today_key
+from app.models import AgentState, LogEvent, Signal
 from app.modules.ingestion import EquityScout, SpendLimitExceeded
 from app.modules.quant_pipeline import run_quant
 from app.modules.risk import RiskOverseer
