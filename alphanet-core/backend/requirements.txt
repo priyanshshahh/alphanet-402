@@ -6,4 +6,5 @@ pydantic-settings==2.5.2
 python-dotenv==1.0.1
 httpx==0.27.2
 groq==0.11.0
+yfinance==0.2.65
 sentry-sdk[fastapi]>=2.19.0,<3

@@ -1,7 +1,8 @@
-"""Autonomous loop: Scout (Tavily 402) -> Quant (Bayes) -> Risk -> log.
+"""Autonomous loop: Scout (yfinance + optional paid news) -> Quant (Bayes) -> Risk -> log.
 
-Runs as a background asyncio task. Each cycle iterates the watchlist, paying
-$0.01 per ticker via x402, and halts immediately on any spend/risk breach.
+Runs as a background asyncio task. Each cycle iterates the equity watchlist
+(free yfinance data always; x402 USDC micropayments for news only in LIVE
+mode) and halts immediately on any spend/risk breach.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import uuid
 from app.core.config import settings
 from app.database import SessionLocal
 from app.models import AgentState, LogEvent, Signal, today_key
-from app.modules.ingestion import SpendLimitExceeded, Tavily402Scout
+from app.modules.ingestion import EquityScout, SpendLimitExceeded
 from app.modules.quant_pipeline import run_quant
 from app.modules.risk import RiskOverseer
 
@@ -57,7 +58,7 @@ def run_cycle() -> dict:
         state.status = "SCOUTING"
         db.commit()
 
-        scout = Tavily402Scout(db)
+        scout = EquityScout(db)
         cycle_id = str(uuid.uuid4())
         for ticker in settings.watchlist:
             idem_key = f"{cycle_id}:{ticker}"
@@ -71,7 +72,7 @@ def run_cycle() -> dict:
                 break
 
             if not result.paid:
-                _log(db, "WARN", "SCOUT", f"No data for {ticker} (unpaid)", ticker)
+                _log(db, "WARN", "SCOUT", f"No data for {ticker} — skipping", ticker)
                 continue
 
             sig = run_quant(result)

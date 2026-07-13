@@ -1,11 +1,13 @@
-"""Scout module: Tavily via REST (API credits), x402 + AWAL (USDC), or offline fallback.
+"""Scout module: real equities data first, paid news second, demo last.
 
 Priority:
-  1. Valid `TAVILY_API_KEY` → POST `TAVILY_REST_ENDPOINT` (plan credits).
-  2. `TRADING_MODE=LIVE` → `npx awal x402 pay` against `TAVILY_402_ENDPOINT`.
-  3. Else → deterministic offline snippets (no external scout; stable for dry demos).
-
-See CURSOR_DOCS.md for AWAL / x402 CLI contract.
+  1. yfinance (keyless, free) — real price/fundamental events. Always on
+     unless DEMO_MODE is set.
+  2. News layer on top: valid `TAVILY_API_KEY` → Tavily REST (plan credits);
+     else `TRADING_MODE=LIVE` → `npx awal x402 pay` against Tavily's 402
+     endpoint (USDC micropayment).
+  3. `DEMO_MODE=1` only: deterministic synthetic snippets, every output
+     labeled `"demo": true`. Never used as a silent fallback.
 """
 from __future__ import annotations
 
@@ -14,13 +16,14 @@ import random
 import shlex
 import subprocess
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import AgentState, LogEvent, today_key
+from app.modules.market_data import MarketDataError, fetch_equity_events
 
 
 class SpendLimitExceeded(Exception):
@@ -30,12 +33,14 @@ class SpendLimitExceeded(Exception):
 @dataclass
 class ScoutResult:
     ticker: str
-    paid: bool
+    paid: bool  # True when the scout produced usable evidence
     amount_usdc: float
     results: List[Dict[str, Any]] = field(default_factory=list)
     raw_text: str = ""
     tx_hash: str = ""
-    source: str = "paper"  # tavily_rest | awal | paper (internal scout channel labels)
+    source: str = "none"  # yfinance | tavily_rest | awal | demo (+ combinations)
+    market_prior: Optional[float] = None  # real base-rate prior when available
+    demo: bool = False  # True only for synthetic demo-mode data
 
 
 class BudgetManager:
@@ -98,8 +103,11 @@ def _tavily_rest_key_ok() -> bool:
     return bool(k) and not k.lower().startswith("your_")
 
 
-class Tavily402Scout:
-    """Tavily scout: REST first, then live x402 AWAL, else offline fallback."""
+class EquityScout:
+    """Equities scout: yfinance (real, free) + optional Tavily news layer.
+
+    DEMO_MODE short-circuits everything with labeled synthetic data.
+    """
 
     def __init__(self, db: Session):
         self.db = db
@@ -109,15 +117,40 @@ class Tavily402Scout:
     def _build_payload(ticker: str) -> Dict[str, Any]:
         return {
             "query": (
-                "institutional accumulation and whale wallet shifts "
-                f"for {ticker}"
+                "institutional ownership changes, insider transactions, and "
+                f"analyst actions for {ticker} stock"
             ),
             "search_depth": "advanced",
         }
 
     def scout(self, ticker: str) -> ScoutResult:
+        if settings.DEMO_MODE:
+            return self._demo_search(ticker)
+
+        result = self._market_data_scout(ticker)
+        news = self._news_scout(ticker)
+        return _merge_results(result, news)
+
+    # -- real, keyless -----------------------------------------------------
+    def _market_data_scout(self, ticker: str) -> ScoutResult:
+        try:
+            events, prior = fetch_equity_events(ticker)
+        except MarketDataError as exc:
+            self._log_error(ticker, f"yfinance scout failed: {exc}", category="SCOUT")
+            return ScoutResult(ticker, paid=False, amount_usdc=0.0, source="yfinance")
+        return ScoutResult(
+            ticker=ticker,
+            paid=True,
+            amount_usdc=0.0,
+            results=events,
+            raw_text=json.dumps(events)[:4000],
+            source="yfinance",
+            market_prior=prior,
+        )
+
+    # -- paid news layer (optional) ------------------------------------------
+    def _news_scout(self, ticker: str) -> Optional[ScoutResult]:
         payload = self._build_payload(ticker)
-        price = settings.MAX_PRICE_PER_SEARCH_USDC
 
         if _tavily_rest_key_ok():
             result = self._rest_search(ticker, payload)
@@ -127,26 +160,26 @@ class Tavily402Scout:
                         level="INFO",
                         category="TAVILY",
                         ticker=ticker,
-                        message=f"REST search ({result.source}) — API credits, no USDC spend",
+                        message="Tavily REST news — API credits, no USDC spend",
                         amount_usdc=0.0,
                     )
                 )
                 self.db.commit()
             return result
 
-        self.budget.assert_can_spend(price)
         if settings.is_live:
+            price = settings.MAX_PRICE_PER_SEARCH_USDC
+            self.budget.assert_can_spend(price)
             result = self._live_pay(ticker, payload, price)
-        else:
-            result = self._paper_search(ticker, payload)
+            if result.paid:
+                self.budget.record_spend(
+                    result.amount_usdc,
+                    ticker,
+                    f"Tavily x402 news for {ticker} ({result.source})",
+                )
+            return result
 
-        if result.paid:
-            self.budget.record_spend(
-                result.amount_usdc,
-                ticker,
-                f"Tavily search for {ticker} ({result.source})",
-            )
-        return result
+        return None
 
     def _rest_search(self, ticker: str, payload: Dict[str, Any]) -> ScoutResult:
         body = {
@@ -241,36 +274,51 @@ class Tavily402Scout:
             self._log_error(ticker, f"awal subprocess failed: {exc}", category="X402")
             return ScoutResult(ticker, paid=False, amount_usdc=0.0, source="awal")
 
-    def _paper_search(self, ticker: str, payload: Dict[str, Any]) -> ScoutResult:
+    # -- demo mode only ------------------------------------------------------
+    def _demo_search(self, ticker: str) -> ScoutResult:
+        """Synthetic headlines for offline demos. Every record is labeled
+        `"demo": true` and no spend or revenue is ever booked for it."""
         rng = random.Random(f"{ticker}-{today_key()}-{random.random()}")
-        whales = [
-            f"A dormant whale moved 12,400 {ticker} to a cold wallet",
-            f"Net exchange outflows for {ticker} hit a 30-day high",
-            f"Two institutional desks accumulated {ticker} OTC overnight",
-            f"Large {ticker} holders rotated into stablecoins, signalling de-risking",
-            f"On-chain data shows {ticker} smart-money wallets distributing into strength",
+        headlines = [
+            f"Two institutional desks reported accumulating {ticker} last week",
+            f"Fund filings show {ticker} positions trimmed into strength",
+            f"Options desks flag unusual bullish flow in {ticker}",
+            f"Analysts split on {ticker} after a volatile session",
+            f"Insider Form 4 filings show routine {ticker} activity",
         ]
         bias = rng.choice(["bullish", "bearish"])
-        snippet = rng.choice([w for w in whales])
+        snippet = rng.choice(headlines)
         results = [
             {
-                "title": f"Whale flows update: {ticker}",
-                "url": "https://402.tavily.com/v1/search",
+                "title": f"[DEMO] Synthetic headline: {ticker}",
+                "url": "about:demo",
                 "content": (
-                    f"{snippet}. Sentiment leans {bias} as derivatives funding "
-                    "normalises; offline scout path (no on-chain settlement)."
+                    f"[DEMO — synthetic data, not a real headline] {snippet}. "
+                    f"Sentiment leans {bias}."
                 ),
                 "score": round(rng.uniform(0.6, 0.95), 2),
+                "demo": True,
             }
         ]
+        self.db.add(
+            LogEvent(
+                level="INFO",
+                category="SCOUT",
+                ticker=ticker,
+                message=f"DEMO MODE: synthetic scout data for {ticker} (no spend)",
+                amount_usdc=0.0,
+            )
+        )
+        self.db.commit()
         return ScoutResult(
             ticker=ticker,
             paid=True,
-            amount_usdc=settings.MAX_PRICE_PER_SEARCH_USDC,
+            amount_usdc=0.0,
             results=results,
             raw_text=json.dumps(results),
             tx_hash="",
-            source="paper",
+            source="demo",
+            demo=True,
         )
 
     @staticmethod
@@ -299,3 +347,17 @@ class Tavily402Scout:
             LogEvent(level="ERROR", category=category, ticker=ticker, message=message)
         )
         self.db.commit()
+
+
+def _merge_results(base: ScoutResult, extra: Optional[ScoutResult]) -> ScoutResult:
+    """Fold an optional news result into the market-data result."""
+    if extra is None or not extra.paid or not extra.results:
+        return base
+    if not base.paid:
+        return extra
+    base.results = list(base.results) + list(extra.results)
+    base.raw_text = json.dumps(base.results)[:4000]
+    base.source = f"{base.source}+{extra.source}"
+    base.amount_usdc += extra.amount_usdc
+    base.tx_hash = base.tx_hash or extra.tx_hash
+    return base

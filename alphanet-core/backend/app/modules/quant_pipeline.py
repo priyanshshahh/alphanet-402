@@ -1,8 +1,9 @@
 """Quant engine.
 
 Responsibilities:
-  1. LLM parsing — Groq turns Tavily text into strict JSON (sentiment and structured
-     boolean/trend features). The LLM never performs portfolio math.
+  1. LLM parsing — Groq turns scout text (yfinance events, Tavily news) into strict
+     JSON (sentiment and structured boolean/trend features). The LLM never performs
+     portfolio math. A deterministic heuristic covers keyless runs.
   2. Pure math — Bayesian log-odds update with leakage-aware edge calculation.
   3. Leakage guard — verify_no_leakage() rejects forward-looking evidence.
 """
@@ -53,7 +54,8 @@ _LOG_LIKELIHOOD: Dict[str, float] = {
 
 
 _SYSTEM_PROMPT = (
-    "You extract structured features from whale/institutional market research. "
+    "You extract structured features from equities market research "
+    "(price/fundamental events, institutional flow, news). "
     "Respond with STRICT minified JSON ONLY, no prose, keys exactly:\n"
     '{"sentiment":"bullish|bearish|neutral","confidence":0.0,'
     '"whale_action":"short phrase",'
@@ -108,9 +110,17 @@ def _groq_extract(text: str) -> Optional[Dict[str, Any]]:
 
 def _heuristic_extract(text: str) -> Dict[str, Any]:
     t = (text or "").lower()
-    bull = len(re.findall(r"accumulat|inflow|outflow to cold|bullish|buy|long|ceo buy", t))
+    bull = len(
+        re.findall(
+            r"accumulat|inflow|bullish|buy|long|ceo buy|above its 50-day|52-week high|upgrade",
+            t,
+        )
+    )
     bear = len(
-        re.findall(r"distribut|de-risk|bearish|sell|rotated into stable|dump|sec charge|lawsuit", t)
+        re.findall(
+            r"distribut|de-risk|bearish|sell|dump|sec charge|lawsuit|below its 50-day|52-week low|downgrade",
+            t,
+        )
     )
     if bull == bear:
         sentiment, conf = "neutral", 0.4
@@ -122,7 +132,13 @@ def _heuristic_extract(text: str) -> Dict[str, Any]:
     action = text.split(".")[0][:160] if text else "no clear whale action"
     ceo_buy = bool(re.search(r"ceo|cfo|officer.*buy|insider buy", t))
     inst = "neutral"
-    if re.search(r"13f|institution|fund|accumulation|whale inflow", t):
+    # Only flow/positioning language sets a trend — a static "institutional
+    # ownership 61%" style fact or the word "fundamentals" must not.
+    if re.search(
+        r"13f|institutional (accumulat|buying|selling|desks|investors)"
+        r"|fund flows|accumulat|increased (its |their )?stake|trimmed",
+        t,
+    ):
         inst = "bullish" if bull >= bear else "bearish"
     reg = bool(re.search(r"sec investigat|subpoena|lawsuit|sanction|regulatory risk|ofac", t))
     insider_sell = bool(re.search(r"insider sell|form 4 sell|officer sold", t))
@@ -254,14 +270,20 @@ def verify_no_leakage(
 
 
 def get_market_prior(ticker: str) -> float:
-    """Pseudo market-implied prior near 0.5 (replace with live Polymarket feed)."""
+    """Deterministic pseudo prior near 0.5 — DEMO MODE ONLY. Real runs use the
+    base-rate prior derived from actual price history (ScoutResult.market_prior)."""
     seed = sum(ord(c) for c in ticker)
     drift = ((seed % 21) - 10) / 200.0
     return _clip(0.5 + drift)
 
 
 def _evidence_bundle(scout: ScoutResult) -> Dict[str, Any]:
-    out: Dict[str, Any] = {"mode": scout.source, "tx_hash": scout.tx_hash, "urls": []}
+    out: Dict[str, Any] = {
+        "mode": scout.source,
+        "demo": scout.demo,
+        "tx_hash": scout.tx_hash,
+        "urls": [],
+    }
     for r in scout.results or []:
         out["urls"].append(
             {
@@ -275,7 +297,12 @@ def _evidence_bundle(scout: ScoutResult) -> Dict[str, Any]:
 
 def run_quant(scout: ScoutResult) -> QuantSignal:
     prior_captured_at = dt.datetime.now(dt.timezone.utc)
-    prior = get_market_prior(scout.ticker)
+    # Real path: base-rate prior from actual price history. Demo path: labeled
+    # deterministic pseudo prior.
+    if scout.market_prior is not None:
+        prior = _clip(float(scout.market_prior))
+    else:
+        prior = get_market_prior(scout.ticker)
 
     parsed = parse_sentiment(scout)
     feat_subset = {k: parsed[k] for k in parsed if k != "whale_action"}
