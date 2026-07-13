@@ -25,17 +25,25 @@ from app.models import AgentState, LogEvent, Signal, X402Receipt, today_key
 
 router = APIRouter()
 
-# Price of our own alpha endpoint: 1000 micro-USDC = $0.01 (CURSOR_DOCS.md §4)
+# Price of our own alpha endpoint: 1000 micro-USDC = $0.01
 ALPHA_PRICE_ATOMIC = "1000"
 ALPHA_PRICE_USDC = 0.01
+
+_ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+
+class PaymentConfigError(RuntimeError):
+    """Raised when x402 selling is attempted without a configured payTo wallet."""
 
 
 @lru_cache
 def resolve_pay_to() -> str:
     """payTo address for our 402 invoices. Prefer the configured address,
-    else ask the wallet enclave via `npx awal address`."""
-    if settings.OUR_AWAL_WALLET_ADDRESS:
-        return settings.OUR_AWAL_WALLET_ADDRESS
+    else ask the wallet enclave via `npx awal address`. Fails hard rather
+    than ever falling back to the zero address."""
+    configured = (settings.OUR_AWAL_WALLET_ADDRESS or "").strip()
+    if configured and configured.lower() != _ZERO_ADDRESS:
+        return configured
     try:
         proc = subprocess.run(
             ["npx", "awal", "address", "--json"],
@@ -46,11 +54,26 @@ def resolve_pay_to() -> str:
         if proc.returncode == 0:
             data = json.loads(proc.stdout.strip() or "{}")
             addr = data.get("evm") or data.get("address") or data.get("evmAddress")
-            if addr:
+            if addr and str(addr).lower() != _ZERO_ADDRESS:
                 return str(addr)
     except Exception:
         pass
-    return "0x0000000000000000000000000000000000000000"
+    raise PaymentConfigError(
+        "No payTo wallet configured: set OUR_AWAL_WALLET_ADDRESS (or log in "
+        "with `npx awal auth login`) before selling rationale over x402."
+    )
+
+
+def _payments_unavailable() -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": (
+                "x402 selling disabled: no payTo wallet configured. "
+                "Set OUR_AWAL_WALLET_ADDRESS in the environment."
+            )
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -69,13 +92,17 @@ def _agent_state_payload(db: Session) -> dict:
         state.daily_drawdown_usdc = 0.0
         db.commit()
     remaining = max(0.0, settings.MAX_DAILY_SPEND_USDC - state.daily_spend_usdc)
+    try:
+        pay_to = state.wallet_address or resolve_pay_to()
+    except PaymentConfigError:
+        pay_to = ""
     return {
         "status": state.status,
         "trading_mode": state.trading_mode,
         "halted": state.halted,
         "halt_reason": state.halt_reason,
         "network": settings.NETWORK_CAIP_ID,
-        "wallet_address": state.wallet_address or resolve_pay_to(),
+        "wallet_address": pay_to,
         "daily_spend_usdc": round(state.daily_spend_usdc, 4),
         "daily_budget_usdc": settings.MAX_DAILY_SPEND_USDC,
         "daily_budget_remaining_usdc": round(remaining, 4),
@@ -83,7 +110,8 @@ def _agent_state_payload(db: Session) -> dict:
         "realized_pnl_usdc": round(state.realized_pnl_usdc, 4),
         "daily_drawdown_usdc": round(state.daily_drawdown_usdc, 4),
         "drawdown_limit_usdc": settings.DAILY_DRAWDOWN_LIMIT_USDC,
-        "tavily_mode": settings.tavily_ingestion_mode,
+        "data_mode": settings.data_mode,
+        "demo_mode": settings.DEMO_MODE,
     }
 
 
@@ -101,6 +129,10 @@ def _receipt_key(x_payment: str, signal_id: int) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _is_demo_proof(x_payment: str) -> bool:
+    return (x_payment or "").strip().lower().startswith("demo-")
+
+
 def _causal_payload(sig: Signal, x_payment: str) -> dict:
     nlp = {}
     ev = {}
@@ -112,10 +144,12 @@ def _causal_payload(sig: Signal, x_payment: str) -> dict:
         ev = json.loads(sig.evidence_json or "{}")
     except json.JSONDecodeError:
         pass
+    demo = _is_demo_proof(x_payment)
     return {
         "ticker": sig.ticker,
         "signal_id": sig.id,
-        "settled_usdc": ALPHA_PRICE_USDC,
+        "settled_usdc": 0.0 if demo else ALPHA_PRICE_USDC,
+        "demo_payment": demo,
         "network": settings.NETWORK_CAIP_ID,
         "payment_proof_prefix": (x_payment or "")[:64],
         "causal_chain": {
@@ -145,27 +179,44 @@ def _settle_rationale_sale(
             pass
 
     body = _causal_payload(sig, x_payment)
+    demo = _is_demo_proof(x_payment)
 
-    state = db.get(AgentState, 1)
-    if state.day_key != today_key():
-        state.day_key = today_key()
-        state.daily_revenue_usdc = 0.0
-    state.daily_revenue_usdc = float(state.daily_revenue_usdc) + ALPHA_PRICE_USDC
-    db.add(
-        LogEvent(
-            level="REVENUE",
-            category="X402",
-            ticker=ticker,
-            message=f"Sold alpha rationale for signal #{sig.id} ({ticker}) $0.01",
-            amount_usdc=ALPHA_PRICE_USDC,
+    if demo:
+        # Demo header from the x402 Lab UI: return the causal chain, but never
+        # book revenue for a payment that did not settle on-chain.
+        db.add(
+            LogEvent(
+                level="INFO",
+                category="X402",
+                ticker=ticker,
+                message=(
+                    f"Served rationale for signal #{sig.id} ({ticker}) against a "
+                    "demo X-Payment header — no settlement, no revenue booked"
+                ),
+                amount_usdc=0.0,
+            )
         )
-    )
+    else:
+        state = db.get(AgentState, 1)
+        if state.day_key != today_key():
+            state.day_key = today_key()
+            state.daily_revenue_usdc = 0.0
+        state.daily_revenue_usdc = float(state.daily_revenue_usdc) + ALPHA_PRICE_USDC
+        db.add(
+            LogEvent(
+                level="REVENUE",
+                category="X402",
+                ticker=ticker,
+                message=f"Sold alpha rationale for signal #{sig.id} ({ticker}) $0.01",
+                amount_usdc=ALPHA_PRICE_USDC,
+            )
+        )
     db.add(
         X402Receipt(
             receipt_key=key,
             signal_id=sig.id,
             ticker=ticker,
-            amount_usdc=ALPHA_PRICE_USDC,
+            amount_usdc=0.0 if demo else ALPHA_PRICE_USDC,
             payload_json=json.dumps(body),
         )
     )
@@ -286,14 +337,15 @@ def reset_day():
 JUDGE_BRIEFING = {
     "product": "AlphaNet-402",
     "elevator": (
-        "A self-funding mini crypto hedge fund: it buys live market intelligence (Tavily via REST or x402+AWAL), "
-        "turns prose into strict JSON with an LLM, updates beliefs in Python (Bayesian log-odds), "
-        "enforces institutional-grade risk caps, and sells the rationale to other agents over HTTP 402 + USDC."
+        "An equities research agent that funds its own data: free fundamentals and price "
+        "history via yfinance, paid news via Tavily (REST credits or x402+AWAL USDC), "
+        "an LLM used strictly as an NLP parser, Bayesian log-odds belief updates in "
+        "deterministic Python, and its own rationale re-sold to other agents over HTTP 402."
     ),
     "pillars": [
         {
             "name": "Scout",
-            "detail": "Live Tavily search (REST credits or x402+AWAL) for whale / institutional flow language.",
+            "detail": "Real price/fundamental events from yfinance (keyless); Tavily news layered on when paid access is configured.",
         },
         {
             "name": "Quant",
@@ -341,16 +393,20 @@ def demo_judge_run():
             }
             for s in rows
         ]
-        tick = rows[0].ticker if rows else "BTC"
+        tick = rows[0].ticker if rows else (settings.watchlist[0] if settings.watchlist else "AAPL")
         sid = rows[0].id if rows else None
     finally:
         db.close()
+    try:
+        sample_invoice = _invoice_payload()
+    except PaymentConfigError as exc:
+        sample_invoice = {"unavailable": str(exc)}
     return {
         "ran_at": datetime.now(timezone.utc).isoformat(),
         "cycle": summary,
         "state": state,
         "latest_signals": latest,
-        "sample_x402_invoice": _invoice_payload(),
+        "sample_x402_invoice": sample_invoice,
         "deep_links": {
             "command_center": "/",
             "x402_lab": "/x402-lab",
@@ -362,7 +418,7 @@ def demo_judge_run():
 
 
 # ---------------------------------------------------------------------------
-# B2B x402 monetization endpoint (CURSOR_DOCS.md §4)
+# B2B x402 monetization endpoint
 # ---------------------------------------------------------------------------
 def _invoice_payload() -> dict:
     return {
@@ -388,9 +444,13 @@ def alpha_rationale(
 
     # Unpaid request -> issue a 402 invoice (network from settings, default Base Sepolia).
     if not x_payment:
+        try:
+            invoice = _invoice_payload()
+        except PaymentConfigError:
+            return _payments_unavailable()
         return JSONResponse(
             status_code=402,
-            content=_invoice_payload(),
+            content=invoice,
             headers={"Accept-Payment": "x402"},
         )
 
@@ -421,9 +481,13 @@ def trade_rationale_by_id(
 ):
     """Blueprint alias: monetize rationale for a specific stored signal row."""
     if not x_payment:
+        try:
+            invoice = _invoice_payload()
+        except PaymentConfigError:
+            return _payments_unavailable()
         return JSONResponse(
             status_code=402,
-            content=_invoice_payload(),
+            content=invoice,
             headers={"Accept-Payment": "x402"},
         )
 

@@ -1,9 +1,9 @@
-"""Central configuration loaded from `.env` / `.env.example`.
+"""Central configuration loaded from the environment / `.env`.
 
-Hackathon default: **Base Sepolia** (`eip155:84532`) + test USDC + optional
-`AWAL_X402_PAY_EXTRA` flags for `npx awal x402 pay`. For Base Mainnet production,
-override `NETWORK_CAIP_ID`, `USDC_CONTRACT_ADDRESS`, and clear `AWAL_X402_PAY_EXTRA`
-as needed (see repo `CURSOR_DOCS.md`).
+Default network: **Base Sepolia** (`eip155:84532`) + test USDC + optional
+`AWAL_X402_PAY_EXTRA` flags for `npx awal x402 pay`. For Base Mainnet,
+override `NETWORK_CAIP_ID`, `USDC_CONTRACT_ADDRESS`, and clear
+`AWAL_X402_PAY_EXTRA` as needed (see docs/PROJECT-NOTES.md).
 """
 from __future__ import annotations
 
@@ -14,16 +14,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Load defaults from .env.example first, then let a real .env override them.
     model_config = SettingsConfigDict(
-        env_file=(".env.example", ".env"), env_file_encoding="utf-8", extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # LIVE = Tavily x402 + `npx awal x402 pay` when REST key is absent; PAPER = offline scout only.
-    TRADING_MODE: str = "LIVE"  # PAPER | LIVE
+    # LIVE = x402/AWAL micropayments allowed for paid data; PAPER = free sources only.
+    TRADING_MODE: str = "PAPER"  # PAPER | LIVE
+    # DEMO_MODE replaces real market data with clearly-labeled synthetic headlines.
+    DEMO_MODE: bool = False
     LOOP_INTERVAL_SECONDS: int = 30
 
-    # Base Sepolia (hackathon default — fund via Coinbase faucet, test USDC)
+    # Base Sepolia (testnet default — fund via Coinbase faucet, test USDC)
     NETWORK_CAIP_ID: str = "eip155:84532"
     USDC_CONTRACT_ADDRESS: str = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 
@@ -40,8 +41,9 @@ class Settings(BaseSettings):
     TAVILY_402_ENDPOINT: str = "https://402.tavily.com/v1/search"
     TAVILY_REST_ENDPOINT: str = "https://api.tavily.com/search"
     TAVILY_API_KEY: str = ""
-    # Default matches project hackathon wallet; override in `.env` for other agents.
-    OUR_AWAL_WALLET_ADDRESS: str = "0x4b97f492232c6C285F0F3b60c38fc4a7Ee13d675"
+    # payTo address for our own 402 invoices. No default on purpose: selling
+    # rationale over x402 is refused until the operator sets a real address.
+    OUR_AWAL_WALLET_ADDRESS: str = ""
 
     # Inference (Groq = free-tier NLP extraction only; never portfolio math)
     GROQ_API_KEY: str = ""
@@ -51,8 +53,8 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     SENTRY_ENVIRONMENT: str = "development"
 
-    # Scouting
-    WATCHLIST: str = "BTC,ETH,SOL"
+    # Equity tickers the autonomous loop scouts each cycle
+    WATCHLIST: str = "AAPL,MSFT,NVDA"
 
     @property
     def watchlist(self) -> List[str]:
@@ -63,14 +65,20 @@ class Settings(BaseSettings):
         return self.TRADING_MODE.upper() == "LIVE"
 
     @property
-    def tavily_ingestion_mode(self) -> str:
-        """Scout data path: Tavily REST, x402+AWAL, or offline fallback."""
+    def tavily_key_ok(self) -> bool:
         key = (self.TAVILY_API_KEY or "").strip()
-        if key and not key.lower().startswith("your_"):
-            return "tavily_rest_credits"
+        return bool(key) and not key.lower().startswith("your_")
+
+    @property
+    def data_mode(self) -> str:
+        """Primary scout data path shown in /health and the UI."""
+        if self.DEMO_MODE:
+            return "demo"
+        if self.tavily_key_ok:
+            return "yfinance+tavily_rest"
         if self.is_live:
-            return "tavily_x402_awal"
-        return "paper"
+            return "yfinance+tavily_x402"
+        return "yfinance"
 
 
 @lru_cache

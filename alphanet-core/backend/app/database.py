@@ -6,7 +6,10 @@ import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "alphanet.db")
+DB_PATH = os.environ.get(
+    "ALPHANET_DB_PATH",
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "alphanet.db"),
+)
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(

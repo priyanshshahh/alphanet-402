@@ -75,10 +75,11 @@ def health():
         "ok": True,
         "service": "alphanet-402",
         "mode": settings.TRADING_MODE,
+        "demo_mode": settings.DEMO_MODE,
+        "data_mode": settings.data_mode,
         "network": settings.NETWORK_CAIP_ID,
         "awal_wallet": settings.OUR_AWAL_WALLET_ADDRESS or None,
         "tavily_402": settings.TAVILY_402_ENDPOINT,
         "tavily_rest": settings.TAVILY_REST_ENDPOINT,
-        "tavily_mode": settings.tavily_ingestion_mode,
         "sentry": bool((settings.SENTRY_DSN or "").strip()),
     }
