@@ -9,7 +9,6 @@ alphanet-core/backend/alphanet.db-journal
 node_modules/
 *.db
 consumer/.env
-polymarket-sentiment-agent/backend/.env
 .DS_Store
 __MACOSX/
 
