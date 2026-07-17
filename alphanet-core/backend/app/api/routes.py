@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import subprocess
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -62,6 +63,38 @@ def resolve_pay_to() -> str:
         "No payTo wallet configured: set OUR_AWAL_WALLET_ADDRESS (or log in "
         "with `npx awal auth login`) before selling rationale over x402."
     )
+
+
+def _admin_auth_error(authorization: Optional[str]) -> Optional[JSONResponse]:
+    """Guard for the control endpoints (/api/reset, /api/cycle).
+
+    No ADMIN_TOKEN configured -> endpoint is disabled (503), never open.
+    Otherwise require `Authorization: Bearer <token>`, compared in constant
+    time, and reject with 401 on anything missing or wrong.
+    """
+    token = (settings.ADMIN_TOKEN or "").strip()
+    if not token:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": (
+                    "Control endpoint disabled: set ADMIN_TOKEN in the "
+                    "environment to enable it."
+                )
+            },
+        )
+
+    provided = ""
+    if authorization and authorization.strip().lower().startswith("bearer "):
+        provided = authorization.strip()[len("bearer "):].strip()
+
+    if not provided or not secrets.compare_digest(provided, token):
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Unauthorized: missing or invalid bearer token"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return None
 
 
 def _payments_unavailable() -> JSONResponse:
@@ -307,13 +340,23 @@ def get_logs(limit: int = 40):
 
 
 @router.post("/api/cycle")
-def trigger_cycle():
+def trigger_cycle(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+):
     """Run one scout->quant->risk cycle on demand (handy for demos)."""
+    err = _admin_auth_error(authorization)
+    if err:
+        return err
     return agent_loop.run_cycle()
 
 
 @router.post("/api/reset")
-def reset_day():
+def reset_day(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+):
+    err = _admin_auth_error(authorization)
+    if err:
+        return err
     db = SessionLocal()
     try:
         state = db.get(AgentState, 1)

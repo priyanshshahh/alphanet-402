@@ -177,3 +177,57 @@ def test_health_reports_data_mode(db):
     assert body["ok"] is True
     assert body["data_mode"] == "yfinance"
     assert body["demo_mode"] is False
+
+
+# --- admin auth on control endpoints (/api/reset, /api/cycle) --------------
+def test_control_endpoints_disabled_without_admin_token(db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_TOKEN", "")
+    client = TestClient(app)
+
+    r = client.post("/api/reset")
+    assert r.status_code == 503
+    assert "ADMIN_TOKEN" in r.json()["error"]
+
+    r = client.post("/api/cycle")
+    assert r.status_code == 503
+    assert "ADMIN_TOKEN" in r.json()["error"]
+
+
+def test_control_endpoints_reject_missing_token(db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_TOKEN", "s3cret-token")
+    client = TestClient(app)
+
+    r = client.post("/api/reset")
+    assert r.status_code == 401
+
+    r = client.post("/api/cycle")
+    assert r.status_code == 401
+
+
+def test_control_endpoints_reject_wrong_token(db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_TOKEN", "s3cret-token")
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer wrong-token"}
+
+    r = client.post("/api/reset", headers=headers)
+    assert r.status_code == 401
+
+    r = client.post("/api/cycle", headers=headers)
+    assert r.status_code == 401
+
+
+def test_control_endpoints_accept_correct_token(db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_TOKEN", "s3cret-token")
+    # /api/cycle would otherwise hit real yfinance network calls; stub it out
+    # so this test only exercises the auth gate, not the scout pipeline.
+    monkeypatch.setattr(routes_mod.agent_loop, "run_cycle", lambda: {"stubbed": True})
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer s3cret-token"}
+
+    r = client.post("/api/reset", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+    r = client.post("/api/cycle", headers=headers)
+    assert r.status_code == 200
+    assert r.json() == {"stubbed": True}

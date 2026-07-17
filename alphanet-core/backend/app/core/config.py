@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # local dev only — set to the deployed frontend origin(s) in production.
     ALPHANET_ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # Bearer token required to call the control endpoints (/api/reset,
+    # /api/cycle). Unset by default — those endpoints stay disabled (503)
+    # until you set a real token, rather than being open to anyone with curl.
+    ADMIN_TOKEN: str = ""
+
     @property
     def allowed_origins(self) -> List[str]:
         return [
