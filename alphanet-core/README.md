@@ -30,7 +30,7 @@ data only when you ask for it.
 ## Tests
 
 ```bash
-cd alphanet-core/backend && pytest tests -q   # 50 offline tests, no network
+cd alphanet-core/backend && pytest tests -q   # 58 offline tests, no network
 ```
 
 ## UI entry points
@@ -47,9 +47,18 @@ cd alphanet-core/backend && pytest tests -q   # 50 offline tests, no network
 | Route | Purpose |
 | --- | --- |
 | `GET /api/state` | Agent state + `data_mode` / `demo_mode` |
-| `POST /api/cycle` | Run one scout→quant→risk pass |
+| `POST /api/cycle` | Run one scout→quant→risk pass — requires `Authorization: Bearer $ADMIN_TOKEN` |
+| `POST /api/reset` | Reset daily counters/halt state — requires `Authorization: Bearer $ADMIN_TOKEN` |
 | `GET /api/signals`, `GET /api/signals/{id}` | Signals + causal detail |
 | `GET /api/alpha/{ticker}/rationale`, `GET /api/trade/{id}/rationale` | x402-paywalled rationale |
+
+## Admin auth
+
+`POST /api/reset` and `POST /api/cycle` are control endpoints, not read-only,
+so they require a bearer token: `Authorization: Bearer <ADMIN_TOKEN>`.
+Set `ADMIN_TOKEN` in `.env` — leaving it unset **disables both endpoints**
+(they return `503`) instead of leaving them open. Wrong or missing token
+returns `401`. Comparison is constant-time (`secrets.compare_digest`).
 
 ## Further reading
 

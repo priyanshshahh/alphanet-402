@@ -106,9 +106,10 @@ once, the key stays in a TEE).
 
 ## Tests & CI
 
-- `cd alphanet-core/backend && pytest tests -q` — **50 offline tests**: Bayesian
+- `cd alphanet-core/backend && pytest tests -q` — **58 offline tests**: Bayesian
   update math, leakage guards, heuristic parser, mocked Tavily ingestion,
-  budget caps, demo labeling, payment fail-hard behavior.
+  budget caps, demo labeling, payment fail-hard behavior, admin-token auth
+  on the control endpoints.
 - GitHub Actions: ruff + pytest + frontend build on every push
   ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 

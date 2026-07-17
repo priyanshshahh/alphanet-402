@@ -37,6 +37,10 @@ market-implied probability.
 - Leakage guard rejects look-ahead priors, empty evidence, future-year text
 - Payments fail hard: no `OUR_AWAL_WALLET_ADDRESS` (or awal login) → invoice
   endpoints return 503; the zero address is rejected everywhere
+- Control endpoints require auth: `POST /api/reset` and `POST /api/cycle`
+  need `Authorization: Bearer $ADMIN_TOKEN`. No `ADMIN_TOKEN` set → both
+  return 503 (disabled) rather than being open to an unauthenticated caller;
+  wrong/missing token → 401. Token comparison is constant-time.
 
 ## Known limitations (honest list)
 
@@ -61,7 +65,9 @@ market-implied probability.
   Tavily news results; Groq extracted features; posterior moved 0.490 → 0.539
   (edge +0.0485 → HOLD). API keys were provided at runtime only and are not in
   the repo or its history.
-- Test suite: 50/50 passing offline in <1s (`pytest tests -q`).
+- Test suite: 58/58 passing offline in <1s (`pytest tests -q`), including
+  admin-token auth coverage on `/api/reset` and `/api/cycle` added on
+  2026-07-16 as a security-review follow-up.
 
 ## Deploy
 
