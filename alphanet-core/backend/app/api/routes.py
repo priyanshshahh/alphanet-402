@@ -15,6 +15,7 @@ from functools import lru_cache
 from typing import Optional
 
 from fastapi import APIRouter, Header
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -340,14 +341,15 @@ def get_logs(limit: int = 40):
 
 
 @router.post("/api/cycle")
-def trigger_cycle(
+async def trigger_cycle(
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ):
     """Run one scout->quant->risk cycle on demand (handy for demos)."""
     err = _admin_auth_error(authorization)
     if err:
         return err
-    return agent_loop.run_cycle()
+    # run_cycle() blocks on network I/O — keep it off the event loop.
+    return await run_in_threadpool(agent_loop.run_cycle)
 
 
 @router.post("/api/reset")

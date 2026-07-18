@@ -127,7 +127,10 @@ async def _loop():
     _running = True
     while _running:
         try:
-            run_cycle()
+            # run_cycle() does blocking network I/O (yfinance, Tavily, the awal
+            # subprocess). Off-load it to a worker thread so a slow scout can
+            # never freeze the uvicorn event loop that also serves the API.
+            await asyncio.to_thread(run_cycle)
         except Exception as exc:  # never let the loop die silently
             db = SessionLocal()
             try:
