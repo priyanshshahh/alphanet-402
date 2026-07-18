@@ -26,3 +26,43 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Accessibility baseline (Web Interface Guidelines) --------------------- */
+
+/* Visible keyboard focus for every interactive element — the app styled
+   hover only. :focus-visible keeps the ring off mouse clicks. */
+:focus-visible {
+  outline: 2px solid #7cf6c4;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+a,
+button,
+input,
+[role="button"],
+[tabindex] {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Align digits in metric/ledger columns. */
+table,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Respect reduced-motion: the pulsing status dot and progress transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

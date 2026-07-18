@@ -77,6 +77,8 @@ export default function Dashboard() {
                   {state?.network ?? "…"} · {state?.trading_mode ?? "—"} · {state?.data_mode ?? "…"}
                 </span>
                 <span
+                  role="status"
+                  aria-live="polite"
                   className={`inline-flex items-center gap-1 ${stale ? "text-warn" : "text-muted/70"}`}
                   title={lastOk ? `Last updated ${lastOk.toLocaleTimeString()}` : "Waiting for backend"}
                 >

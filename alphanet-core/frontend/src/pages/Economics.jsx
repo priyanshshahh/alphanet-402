@@ -41,7 +41,7 @@ export default function Economics() {
       </div>
 
       {err && (
-        <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-danger">
+        <div role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-danger">
           {err}
         </div>
       )}

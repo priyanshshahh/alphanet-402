@@ -71,8 +71,14 @@ export default function X402Lab() {
       </div>
 
       <div className="rounded-xl border border-edge bg-panel/70 p-4 space-y-3">
-        <label className="block text-[10px] text-muted uppercase tracking-wider">Ticker</label>
+        <label htmlFor="x402-ticker" className="block text-[10px] text-muted uppercase tracking-wider">
+          Ticker
+        </label>
         <input
+          id="x402-ticker"
+          name="ticker"
+          spellCheck={false}
+          autoComplete="off"
           className="w-full rounded-lg bg-ink border border-edge px-3 py-2 text-sm font-mono text-white"
           value={ticker}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
@@ -96,8 +102,15 @@ export default function X402Lab() {
       </div>
 
       <div className="rounded-xl border border-edge bg-panel/70 p-4 space-y-3">
-        <label className="block text-[10px] text-muted uppercase tracking-wider">Signal id</label>
+        <label htmlFor="x402-signal-id" className="block text-[10px] text-muted uppercase tracking-wider">
+          Signal id
+        </label>
         <input
+          id="x402-signal-id"
+          name="signal_id"
+          inputMode="numeric"
+          spellCheck={false}
+          autoComplete="off"
           className="w-full rounded-lg bg-ink border border-edge px-3 py-2 text-sm font-mono text-white"
           value={signalId}
           onChange={(e) => setSignalId(e.target.value.replace(/\D/g, ""))}
@@ -127,7 +140,10 @@ export default function X402Lab() {
       </div>
 
       {err && (
-        <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+        <div
+          role="alert"
+          className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+        >
           {err}
         </div>
       )}
