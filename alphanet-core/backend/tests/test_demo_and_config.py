@@ -4,7 +4,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api import routes as routes_mod
+from app.api import routes as routes_mod  # noqa: F401 (agent_loop patch target)
+from app.api import x402 as x402_mod
 from app.api.routes import PaymentConfigError, resolve_pay_to
 from app.core.config import settings
 from app.main import app
@@ -54,7 +55,7 @@ def _awal_unavailable(monkeypatch):
     def _fail(*a, **k):
         raise FileNotFoundError("npx not available in tests")
 
-    monkeypatch.setattr(routes_mod.subprocess, "run", _fail)
+    monkeypatch.setattr(x402_mod.subprocess, "run", _fail)
 
 
 def test_resolve_pay_to_fails_hard_without_wallet(monkeypatch):
@@ -141,6 +142,22 @@ def test_economics_reads_the_ledger(db):
     assert body["net_margin_usdc"] == pytest.approx(-0.01)
     assert body["break_even"] is False
     assert len(body["ledger"]) == 3  # 2 spend + 1 revenue, WARN excluded
+
+
+# --- x402 discovery document -----------------------------------------------
+def test_discovery_document_shape(db, monkeypatch):
+    monkeypatch.setattr(settings, "OUR_AWAL_WALLET_ADDRESS", "0xAbC0000000000000000000000000000000000001")
+    client = TestClient(app)
+    r = client.get("/api/x402/discovery")
+    assert r.status_code == 200
+    doc = r.json()
+    assert doc["x402Version"] == 1
+    assert doc["resource"] == "/api/trade/{signal_id}/rationale"
+    accept = doc["accepts"][0]
+    assert accept["asset"] == "USDC"
+    assert accept["maxAmountRequired"] == "1000"
+    assert accept["payTo"] == "0xAbC0000000000000000000000000000000000001"
+    assert "output_schema" in doc["metadata"]
 
 
 # --- CORS ------------------------------------------------------------------
