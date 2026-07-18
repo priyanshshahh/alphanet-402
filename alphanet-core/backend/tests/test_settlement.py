@@ -266,6 +266,9 @@ def test_paid_payload_carries_source_provenance(db, monkeypatch):
     assert body["sources"] == [
         {"title": "yfinance snapshot", "url": "https://finance.yahoo.com/quote/AAPL", "score": None}
     ]
+    # Quality gate: has evidence + leakage_ok => sellable.
+    assert body["quality"]["sellable"] is True
+    assert body["quality"]["checks"]["has_evidence"] is True
 
 
 def test_demo_header_books_nothing_with_status(db, monkeypatch):

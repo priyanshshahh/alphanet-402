@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Optional
 
@@ -104,6 +105,27 @@ def _payment_status(x_payment: str, verdict: Optional[SettlementVerdict]) -> str
     return verdict.status if verdict else "unverified"
 
 
+def _quality_gate(sig: Signal, sources: list) -> dict:
+    """Freshness + minimal self-check on a signal before it's sold. Reported in
+    the payload so a buyer sees the report cleared a bar. (Next step: withhold
+    a failing report from sale entirely rather than only labeling it.)"""
+    age_minutes = None
+    if sig.ts is not None:
+        ts = sig.ts if sig.ts.tzinfo else sig.ts.replace(tzinfo=timezone.utc)
+        age_minutes = round((datetime.now(timezone.utc) - ts).total_seconds() / 60.0, 1)
+    checks = {
+        "leakage_ok": bool(sig.leakage_ok),
+        "has_evidence": bool(sources),
+        "edge_actionable": abs(sig.edge or 0.0) >= settings.EDGE_THRESHOLD,
+        "fresh": age_minutes is not None and age_minutes <= 24 * 60,
+    }
+    return {
+        "sellable": checks["leakage_ok"] and checks["has_evidence"],
+        "age_minutes": age_minutes,
+        "checks": checks,
+    }
+
+
 def _causal_payload(
     sig: Signal, x_payment: str, verdict: Optional[SettlementVerdict]
 ) -> dict:
@@ -149,6 +171,7 @@ def _causal_payload(
         },
         "source_snippet": sig.source_snippet or "",
         "sources": sources,
+        "quality": _quality_gate(sig, sources),
         "leakage_verified": sig.leakage_ok,
         "computed_at": sig.ts.isoformat() if sig.ts else None,
     }
