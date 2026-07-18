@@ -190,6 +190,14 @@ def _causal_payload(
     except json.JSONDecodeError:
         pass
     status = _payment_status(x_payment, verdict)
+    # Provenance: the specific sources that fed THIS report, surfaced only in
+    # the paid payload. Each is a checkable title/link (yfinance event or
+    # Tavily result) so a buyer can audit the analysis, not just trust a number.
+    sources = [
+        {"title": u.get("title"), "url": u.get("url"), "score": u.get("score")}
+        for u in (ev.get("urls") or [])
+        if isinstance(u, dict) and u.get("url")
+    ]
     return {
         "ticker": sig.ticker,
         "signal_id": sig.id,
@@ -211,6 +219,8 @@ def _causal_payload(
             "6_edge": sig.edge,
             "7_decision": sig.decision,
         },
+        "source_snippet": sig.source_snippet or "",
+        "sources": sources,
         "leakage_verified": sig.leakage_ok,
         "computed_at": sig.ts.isoformat() if sig.ts else None,
     }

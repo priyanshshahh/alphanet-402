@@ -237,6 +237,37 @@ def test_verified_receipt_is_idempotent(db, monkeypatch):
     assert state.daily_revenue_usdc == pytest.approx(0.01)
 
 
+def test_paid_payload_carries_source_provenance(db, monkeypatch):
+    monkeypatch.setattr(settings, "OUR_AWAL_WALLET_ADDRESS", PAY_TO)
+    db.add(
+        Signal(
+            ticker="AAPL",
+            sentiment="bullish",
+            decision="BUY",
+            source_snippet="AAPL closed 4% above its 50-day MA.",
+            evidence_json=json.dumps(
+                {"urls": [{"title": "yfinance snapshot", "url": "https://finance.yahoo.com/quote/AAPL", "score": None}]}
+            ),
+        )
+    )
+    db.add(AgentState(id=1))
+    db.commit()
+
+    client = TestClient(app)
+    # Unpaid teaser: a 402 invoice with no sources.
+    inv = client.get("/api/alpha/AAPL/rationale")
+    assert inv.status_code == 402
+    assert "sources" not in inv.json()
+
+    # Paid payload: provenance surfaced.
+    r = client.get("/api/alpha/AAPL/rationale", headers={"X-Payment": "demo-proof-1"})
+    body = r.json()
+    assert body["source_snippet"].startswith("AAPL closed")
+    assert body["sources"] == [
+        {"title": "yfinance snapshot", "url": "https://finance.yahoo.com/quote/AAPL", "score": None}
+    ]
+
+
 def test_demo_header_books_nothing_with_status(db, monkeypatch):
     monkeypatch.setattr(settings, "OUR_AWAL_WALLET_ADDRESS", PAY_TO)
     _seed_signal(db)
