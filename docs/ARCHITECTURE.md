@@ -161,7 +161,8 @@ AlphaNet-402 sits on both sides of x402: it is a **buyer** of Tavily news
 ```mermaid
 sequenceDiagram
     participant Buyer as Downstream agent<br/>(consumer/consumer-agent.ts)
-    participant API as AlphaNet-402 API<br/>(api/routes.py)
+    participant API as AlphaNet-402 API<br/>(api/x402.py)
+    participant RPC as Base Sepolia RPC<br/>(eth_getTransactionReceipt)
     participant DB as SQLite<br/>(X402Receipt, LogEvent)
 
     Buyer->>API: GET /api/alpha/AAPL/rationale (no X-Payment)
@@ -172,23 +173,34 @@ sequenceDiagram
         API-->>Buyer: 402 + invoice {scheme, network CAIP-2, maxAmountRequired=1000 (atomic), payTo}
     end
 
-    Note over Buyer: Privy TEE signs a $0.01 USDC authorization;<br/>x402 facilitator settles on Base Sepolia
+    Note over Buyer: Privy TEE signs a $0.01 USDC authorization;<br/>x402 facilitator settles on Base Sepolia, returns tx hash
 
-    Buyer->>API: GET /api/alpha/AAPL/rationale<br/>X-Payment: <opaque proof string>
-    API->>API: receipt_key = sha256(X-Payment + signal_id)
-    API->>DB: X402Receipt exists for receipt_key?
-    alt already settled (idempotent replay)
+    Buyer->>API: GET /api/alpha/AAPL/rationale<br/>X-Payment: <proof carrying settlement tx hash>
+    API->>DB: receipt_key = sha256(X-Payment + signal_id) — exists?
+    alt exact (proof, signal) replay
         DB-->>API: existing payload_json
-        API-->>Buyer: 200 + cached causal_chain JSON
-    else new receipt
-        API->>API: is_demo_proof = X-Payment starts with "demo-"
-        alt demo_ proof (UI "simulate paid" buttons)
-            API->>DB: LogEvent INFO — no revenue booked
-        else any other non-empty string
-            API->>DB: AgentState.daily_revenue_usdc += 0.01<br/>LogEvent REVENUE +0.01
+        API-->>Buyer: 200 + cached causal_chain JSON (books nothing again)
+    else new receipt_key
+        alt demo- proof (UI "simulate paid" buttons)
+            API->>DB: LogEvent INFO — served, no revenue
+        else non-demo proof
+            API->>API: extract tx hash from proof
+            API->>RPC: eth_getTransactionReceipt(tx)
+            RPC-->>API: status + logs
+            API->>API: status==success AND USDC Transfer to payTo >= amount?
+            alt not verifiable (no tx / RPC down / no matching transfer)
+                API->>DB: daily_unverified_usdc += 0.01, LogEvent WARN — excluded from revenue
+            else verified
+                API->>DB: any receipt with this tx_hash already booked revenue?
+                alt tx already consumed (replay across a different signal)
+                    API->>DB: LogEvent WARN — payment_status=duplicate, no revenue
+                else first use of this tx
+                    API->>DB: daily_revenue_usdc += 0.01, LogEvent REVENUE +0.01
+                end
+            end
         end
-        API->>DB: insert X402Receipt(receipt_key, payload_json)
-        API-->>Buyer: 200 + causal_chain (prior, evidence, nlp_features,<br/>posterior, edge, decision)
+        API->>DB: insert X402Receipt(receipt_key, tx_hash, amount, payload_json)
+        API-->>Buyer: 200 + causal_chain + sources + payment_status + quality
     end
 ```
 
@@ -199,9 +211,13 @@ non-`demo-` payment, the seller extracts a settlement tx hash from the
 httpx): the tx must have succeeded and carried a USDC `Transfer` to our payTo
 for the invoiced amount. Verified → `daily_revenue_usdc += 0.01`; unverifiable
 → served but recorded in `daily_unverified_usdc`, **excluded from revenue**;
-demo → nothing booked. The payload carries `payment_status`
-(demo|verified|unverified), `settlement_tx`, and `sources` provenance. In
-practice:
+demo → nothing booked. **A settlement tx books revenue at most once globally:**
+`X402Receipt.tx_hash` is indexed and checked before crediting, so the same
+settled transfer replayed against a different signal is recorded as
+`duplicate` (served, no revenue) rather than paying out again — the per-(proof,
+signal) `receipt_key` alone only stops exact replays. The payload carries
+`payment_status` (demo|verified|unverified|duplicate), `settlement_tx`, and
+`sources` provenance. In practice:
 
 - The Command Center's own "Simulate paid" buttons (`api.js`) hardcode a
   `demo-settlement-proof-*` prefix, so clicking around the UI never inflates

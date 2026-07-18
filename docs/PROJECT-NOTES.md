@@ -87,8 +87,22 @@ market-implied probability.
   sources, limitations, and a not-investment-advice disclaimer.
 - `GET /api/x402/discovery` — Bazaar-style discovery record so agents can find
   and price the seller endpoint.
-- Paid rationale payload now carries `sources` (provenance) and
-  `payment_status` (demo | verified | unverified).
+- Paid rationale payload now carries `sources` (provenance), `payment_status`
+  (demo | verified | unverified | duplicate), and a `quality` block.
+
+**Settlement is booked at most once per tx, globally.** `X402Receipt.tx_hash`
+is indexed and checked before revenue is credited: the same settled transfer
+presented against a *different* signal is recorded as `duplicate` (served, no
+revenue), not paid out again. The per-(proof, signal) `receipt_key` only stops
+exact replays; this closes the cross-signal replay.
+
+**Quality gate is report-only (for now).** Each sold payload carries a
+`quality` block — the signal's age plus checks for `leakage_ok`, evidence
+present, an actionable edge, and freshness (≤24h), and a `sellable` verdict.
+Today it *labels* the report so a buyer can see it cleared a bar; it does not
+yet withhold a failing report from sale. Actually blocking a low-quality
+rationale from being sold (return the teaser + a reason instead of settling)
+is the documented next step.
 
 ## Verified runs (2026-07-12)
 

@@ -58,6 +58,9 @@ def init_db() -> None:
             "daily_unverified_usdc",
             "daily_unverified_usdc FLOAT DEFAULT 0.0",
         )
+        _sqlite_add_column_if_missing(
+            "x402_receipts", "tx_hash", "tx_hash VARCHAR(66) DEFAULT ''"
+        )
     except Exception as exc:
         # Ephemeral on the Render free tier, so low-stakes there — but on a
         # developer's persisted alphanet.db a genuine migration failure (locked

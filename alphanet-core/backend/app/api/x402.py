@@ -154,7 +154,7 @@ def _causal_payload(
         # settled_usdc is booked as revenue ONLY for a verified on-chain
         # settlement. Demo and unverified payments are served but count $0.
         "settled_usdc": ALPHA_PRICE_USDC if status == "verified" else 0.0,
-        "payment_status": status,  # demo | verified | unverified
+        "payment_status": status,  # demo | verified | unverified | duplicate
         "demo_payment": status == "demo",
         "settlement_tx": verdict.tx_hash if verdict else "",
         "settlement_note": verdict.reason if verdict else "",
@@ -210,7 +210,35 @@ def _settle_rationale_sale(db, sig: Signal, ticker: str, x_payment: str) -> dict
 
     demo = _is_demo_proof(x_payment)
     verdict = None if demo else _verify_payment(x_payment)
+
+    # Global tx-hash consumption: a single settled transfer can book revenue at
+    # most once, ever. If this proof verified but its tx already booked revenue
+    # (against any signal), it's a replay — downgrade to `duplicate` so it is
+    # served but never credited a second time. The per-(proof, signal) receipt
+    # key above only stops exact replays; this stops one tx being presented
+    # against every other ticker/signal.
+    if verdict is not None and verdict.verified and verdict.tx_hash:
+        consumed = (
+            db.query(X402Receipt)
+            .filter(
+                X402Receipt.tx_hash == verdict.tx_hash,
+                X402Receipt.amount_usdc > 0,
+            )
+            .first()
+        )
+        if consumed is not None:
+            verdict = SettlementVerdict(
+                "duplicate",
+                tx_hash=verdict.tx_hash,
+                reason=(
+                    f"settlement tx already booked revenue (receipt for signal "
+                    f"#{consumed.signal_id})"
+                ),
+            )
+
     body = _causal_payload(sig, x_payment, verdict)
+    status = _payment_status(x_payment, verdict)
+    tx_hash = verdict.tx_hash if verdict else ""
 
     state = db.get(AgentState, 1)
     if state is not None and state.day_key != today_key():
@@ -218,7 +246,7 @@ def _settle_rationale_sale(db, sig: Signal, ticker: str, x_payment: str) -> dict
         state.daily_revenue_usdc = 0.0
         state.daily_unverified_usdc = 0.0
 
-    if demo:
+    if status == "demo":
         db.add(
             LogEvent(
                 level="INFO",
@@ -232,7 +260,7 @@ def _settle_rationale_sale(db, sig: Signal, ticker: str, x_payment: str) -> dict
             )
         )
         booked = 0.0
-    elif verdict.verified:
+    elif status == "verified":
         state.daily_revenue_usdc = float(state.daily_revenue_usdc) + ALPHA_PRICE_USDC
         db.add(
             LogEvent(
@@ -241,13 +269,27 @@ def _settle_rationale_sale(db, sig: Signal, ticker: str, x_payment: str) -> dict
                 ticker=ticker,
                 message=(
                     f"Sold alpha rationale for signal #{sig.id} ({ticker}) $0.01 "
-                    f"— settlement verified (tx {verdict.tx_hash[:12]}…)"
+                    f"— settlement verified (tx {tx_hash[:12]}…)"
                 ),
                 amount_usdc=ALPHA_PRICE_USDC,
             )
         )
         booked = ALPHA_PRICE_USDC
-    else:
+    elif status == "duplicate":
+        db.add(
+            LogEvent(
+                level="WARN",
+                category="X402",
+                ticker=ticker,
+                message=(
+                    f"Served rationale for signal #{sig.id} ({ticker}) against a "
+                    f"DUPLICATE settlement — no revenue booked ({verdict.reason})"
+                ),
+                amount_usdc=0.0,
+            )
+        )
+        booked = 0.0
+    else:  # unverified
         state.daily_unverified_usdc = float(state.daily_unverified_usdc) + ALPHA_PRICE_USDC
         db.add(
             LogEvent(
@@ -270,6 +312,7 @@ def _settle_rationale_sale(db, sig: Signal, ticker: str, x_payment: str) -> dict
             ticker=ticker,
             amount_usdc=booked,
             payload_json=json.dumps(body),
+            tx_hash=tx_hash,
         )
     )
     db.commit()

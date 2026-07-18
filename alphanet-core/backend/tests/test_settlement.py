@@ -27,6 +27,7 @@ from app.modules.settlement import (
 PAY_TO = "0xAbC0000000000000000000000000000000000001"
 USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 TX_HASH = "0x" + "ab" * 32
+TX_HASH2 = "0x" + "cd" * 32
 RPC = "https://sepolia.base.example/rpc"
 
 
@@ -113,6 +114,23 @@ def test_transfer_below_amount_fails():
 def test_transfer_from_wrong_contract_fails():
     wrong = "0x1111111111111111111111111111111111111111"
     assert _matches_usdc_transfer(_receipt(address=wrong), USDC, PAY_TO, 1000) is False
+
+
+def test_matches_usdc_transfer_survives_malformed_logs():
+    # Non-string topics / missing fields must not raise (verify_settlement's
+    # "never raises" contract). Each entry is individually malformed.
+    topic = settlement_mod._TRANSFER_TOPIC
+    bad = {
+        "status": "0x1",
+        "logs": [
+            "not-a-dict",
+            {"address": USDC, "topics": [None, 123, {}], "data": "0x1"},
+            {"address": USDC, "topics": "not-a-list"},
+            {"address": None, "topics": [topic, topic, topic], "data": None},
+        ],
+    }
+    assert _matches_usdc_transfer(bad, USDC, PAY_TO, 1000) is False
+    assert _matches_usdc_transfer(None, USDC, PAY_TO, 1000) is False
 
 
 # --- verify_settlement verdicts ---------------------------------------------
@@ -269,6 +287,70 @@ def test_paid_payload_carries_source_provenance(db, monkeypatch):
     # Quality gate: has evidence + leakage_ok => sellable.
     assert body["quality"]["sellable"] is True
     assert body["quality"]["checks"]["has_evidence"] is True
+
+
+def _verified_env(monkeypatch):
+    monkeypatch.setattr(settings, "OUR_AWAL_WALLET_ADDRESS", PAY_TO)
+    monkeypatch.setattr(settings, "SETTLEMENT_RPC_URL", RPC)
+    monkeypatch.setattr(settings, "USDC_CONTRACT_ADDRESS", USDC)
+    _mock_rpc(monkeypatch, _receipt())
+
+
+def test_same_tx_hash_on_different_signal_is_duplicate_no_revenue(db, monkeypatch):
+    """A single settled transfer replayed against a DIFFERENT signal must not
+    book revenue twice — it is recorded as a duplicate."""
+    _verified_env(monkeypatch)
+    db.add(Signal(ticker="AAPL", sentiment="bullish", decision="BUY"))
+    db.add(Signal(ticker="MSFT", sentiment="bullish", decision="BUY"))
+    db.add(AgentState(id=1))
+    db.commit()
+
+    client = TestClient(app)
+    r1 = client.get("/api/alpha/AAPL/rationale", headers={"X-Payment": TX_HASH})
+    assert r1.json()["payment_status"] == "verified"
+
+    # Same tx hash, different ticker/signal.
+    r2 = client.get("/api/alpha/MSFT/rationale", headers={"X-Payment": TX_HASH})
+    body = r2.json()
+    assert body["payment_status"] == "duplicate"
+    assert body["settled_usdc"] == 0.0
+
+    state = db.get(AgentState, 1)
+    db.refresh(state)
+    assert state.daily_revenue_usdc == pytest.approx(0.01)  # booked once, not twice
+
+
+def test_same_proof_same_signal_replay_is_idempotent(db, monkeypatch):
+    """Same (proof, signal) replayed still books exactly once (unchanged)."""
+    _verified_env(monkeypatch)
+    _seed_signal(db)
+
+    client = TestClient(app)
+    for _ in range(3):
+        client.get("/api/alpha/AAPL/rationale", headers={"X-Payment": TX_HASH})
+
+    state = db.get(AgentState, 1)
+    db.refresh(state)
+    assert state.daily_revenue_usdc == pytest.approx(0.01)
+
+
+def test_two_distinct_tx_hashes_both_book(db, monkeypatch):
+    """Two genuinely different settlements each book their own revenue."""
+    _verified_env(monkeypatch)
+    db.add(Signal(ticker="AAPL", sentiment="bullish", decision="BUY"))
+    db.add(Signal(ticker="MSFT", sentiment="bullish", decision="BUY"))
+    db.add(AgentState(id=1))
+    db.commit()
+
+    client = TestClient(app)
+    a = client.get("/api/alpha/AAPL/rationale", headers={"X-Payment": TX_HASH})
+    b = client.get("/api/alpha/MSFT/rationale", headers={"X-Payment": TX_HASH2})
+    assert a.json()["payment_status"] == "verified"
+    assert b.json()["payment_status"] == "verified"
+
+    state = db.get(AgentState, 1)
+    db.refresh(state)
+    assert state.daily_revenue_usdc == pytest.approx(0.02)
 
 
 def test_demo_header_books_nothing_with_status(db, monkeypatch):

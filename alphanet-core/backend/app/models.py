@@ -103,3 +103,6 @@ class X402Receipt(Base):
     amount_usdc = Column(Float, default=0.0)
     created_at = Column(DateTime, default=_utcnow)
     payload_json = Column(Text, default="")
+    # Settlement tx hash, indexed so a single settled transfer can book revenue
+    # only once globally (a replay against a different signal is a duplicate).
+    tx_hash = Column(String(66), default="", index=True)

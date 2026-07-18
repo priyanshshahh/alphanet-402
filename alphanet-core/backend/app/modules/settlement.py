@@ -100,27 +100,40 @@ def _search_tx_hash(obj: object) -> Optional[str]:
     return None
 
 
-def _topic_is_address(topic: str, address: str) -> bool:
+def _topic_is_address(topic: object, address: str) -> bool:
     """A 32-byte log topic left-pads a 20-byte address with zeros."""
+    if not isinstance(topic, str):
+        return False
     return topic[-40:].lower() == address[-40:].lower()
 
 
 def _matches_usdc_transfer(
     receipt: dict, usdc_contract: str, pay_to: str, min_atomic: int
 ) -> bool:
+    if not isinstance(receipt, dict):
+        return False
     logs = receipt.get("logs") or []
+    if not isinstance(logs, list):
+        return False
     for entry in logs:
         if not isinstance(entry, dict):
             continue
-        if (entry.get("address") or "").lower() != usdc_contract.lower():
+        addr = entry.get("address")
+        if not isinstance(addr, str) or addr.lower() != usdc_contract.lower():
             continue
-        topics = entry.get("topics") or []
-        if len(topics) < 3 or topics[0].lower() != _TRANSFER_TOPIC:
+        topics = entry.get("topics")
+        if not isinstance(topics, list) or len(topics) < 3:
+            continue
+        topic0 = topics[0]
+        if not isinstance(topic0, str) or topic0.lower() != _TRANSFER_TOPIC:
             continue
         if not _topic_is_address(topics[2], pay_to):
             continue
+        data = entry.get("data")
+        if not isinstance(data, str):
+            continue
         try:
-            value = int(entry.get("data") or "0x0", 16)
+            value = int(data or "0x0", 16)
         except (TypeError, ValueError):
             continue
         if value >= min_atomic:
