@@ -2,6 +2,8 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const items = [
   { to: "/", label: "Overview", end: true },
+  { to: "/economics", label: "Unit economics" },
+  { to: "/methodology", label: "Methodology" },
   { to: "/pitch-deck", label: "Pitch deck" },
   { to: "/demo", label: "Judge demo" },
   { to: "/strategy", label: "Strategy" },

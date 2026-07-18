@@ -12,6 +12,7 @@ export const api = {
   briefing: () => j("/api/demo/briefing"),
   judgeRun: () => j("/api/demo/judge-run", { method: "POST" }),
   state: () => j("/api/state"),
+  economics: () => j("/api/economics"),
   signals: () => j("/api/signals?limit=12"),
   signal: (id) => j(`/api/signals/${id}`),
   logs: () => j("/api/logs?limit=30"),

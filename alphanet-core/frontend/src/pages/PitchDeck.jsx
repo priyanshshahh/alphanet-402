@@ -87,9 +87,6 @@ const SLIDES = [
     render: () => (
       <div className="text-center space-y-8 max-w-2xl mx-auto">
         <h2 className="text-3xl md:text-4xl font-semibold text-white">Ship the slice</h2>
-        <p className="text-muted text-sm">
-          Full spoken script: <code className="text-accent/90 text-xs">docs/DEMO_GUIDE.md</code>
-        </p>
         <div className="flex flex-wrap gap-3 justify-center">
           <Link
             to="/demo"
@@ -182,9 +179,6 @@ function DemoSlide() {
       </div>
 
       <div className="rounded-xl border border-edge/80 bg-panel/40 px-4 py-3 text-[11px] text-muted leading-relaxed">
-        <strong className="text-white">Presenter doc:</strong>{" "}
-        <code className="text-accent/90">docs/PITCH_DECK_PRESENT.md</code>
-        <br />
         <strong className="text-white">Recording:</strong> from repo root,{" "}
         <code className="text-accent/90">npm run record:demo:install</code> then{" "}
         <code className="text-accent/90">npm run record:demo</code> (Judge embed + Overview →{" "}

@@ -8,6 +8,8 @@ import Pitch from "./pages/Pitch";
 import WalletSetup from "./pages/WalletSetup";
 import JudgeDemo from "./pages/JudgeDemo";
 import PitchDeck from "./pages/PitchDeck";
+import Economics from "./pages/Economics";
+import Methodology from "./pages/Methodology";
 
 export default function App() {
   return (
@@ -16,6 +18,8 @@ export default function App() {
       <Route path="demo/embed" element={<JudgeDemo embed />} />
       <Route element={<AppShell />}>
         <Route index element={<Dashboard />} />
+        <Route path="economics" element={<Economics />} />
+        <Route path="methodology" element={<Methodology />} />
         <Route path="demo" element={<JudgeDemo />} />
         <Route path="strategy" element={<Pitch />} />
         <Route path="architecture" element={<Architecture />} />

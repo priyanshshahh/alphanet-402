@@ -13,8 +13,8 @@ export default function WalletSetup() {
             rel="noreferrer"
           >
             docs.cdp.coinbase.com/llms.txt
-          </a>{" "}
-          (also mirrored in-repo at <code className="text-muted">docs/cdp-llms.txt</code>).
+          </a>
+          .
         </p>
       </div>
 

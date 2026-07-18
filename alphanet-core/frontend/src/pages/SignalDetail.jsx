@@ -83,6 +83,32 @@ export default function SignalDetail() {
         )}
       </Panel>
 
+      {Array.isArray(sig.evidence?.urls) && sig.evidence.urls.length > 0 && (
+        <Panel title="Sources / provenance">
+          <ul className="space-y-2">
+            {sig.evidence.urls.map((u, i) => (
+              <li key={i} className="text-sm">
+                <a
+                  href={u.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent hover:underline break-all"
+                >
+                  {u.title || u.url}
+                </a>
+                {u.score != null && (
+                  <span className="text-muted text-xs ml-2 font-mono">score {u.score}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-muted mt-3">
+            These are the exact sources that fed this signal — also included in the paid x402
+            payload so a buyer can audit the analysis.
+          </p>
+        </Panel>
+      )}
+
       <Panel title="NLP features (JSON)">
         <pre className="text-[11px] font-mono text-accent/90 overflow-x-auto whitespace-pre-wrap">
           {JSON.stringify(sig.nlp_features || {}, null, 2)}
@@ -106,6 +132,10 @@ export default function SignalDetail() {
         <code className="text-[11px] text-muted break-all">
           GET /api/trade/{sig.id}/rationale
         </code>
+        <p className="text-[11px] text-muted mt-2 leading-relaxed">
+          Revenue is booked only when the x402 settlement is verified on-chain; unverified
+          payments are served but excluded from the revenue counter.
+        </p>
       </Panel>
     </main>
   );

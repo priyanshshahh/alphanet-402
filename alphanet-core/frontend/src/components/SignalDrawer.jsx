@@ -103,6 +103,9 @@ export default function SignalDrawer({ signalId, onClose }) {
                 <code className="text-[10px] text-muted break-all block">
                   GET /api/trade/{sig.id}/rationale
                 </code>
+                <p className="text-[10px] text-muted mt-2 leading-relaxed">
+                  Revenue counts only on verified on-chain settlement.
+                </p>
                 <Link
                   to={`/signals/${sig.id}`}
                   className="inline-block mt-3 text-xs text-accent hover:underline"

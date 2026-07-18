@@ -12,6 +12,8 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [invoice, setInvoice] = useState(null);
   const [drawerId, setDrawerId] = useState(null);
+  const [lastOk, setLastOk] = useState(null);
+  const [stale, setStale] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -19,8 +21,12 @@ export default function Dashboard() {
       setState(s);
       setSignals(sig);
       setLogs(lg);
+      setLastOk(new Date());
+      setStale(false);
     } catch {
-      /* backend warming */
+      // Don't wipe the last good data — flag it as stale so the operator can
+      // tell "healthy, no new signals" apart from "polling has been failing".
+      setStale(true);
     }
   }, []);
 
@@ -66,8 +72,24 @@ export default function Dashboard() {
             <div className="w-2.5 h-2.5 rounded-full bg-accent shadow-[0_0_10px_#7cf6c4]" />
             <div>
               <div className="font-semibold tracking-wide text-white">AlphaNet-402 · Command Center</div>
-              <div className="text-[11px] text-muted mt-0.5 font-mono">
-                {state?.network ?? "…"} · {state?.trading_mode ?? "—"} · {state?.data_mode ?? "…"}
+              <div className="text-[11px] text-muted mt-0.5 font-mono flex items-center gap-2">
+                <span>
+                  {state?.network ?? "…"} · {state?.trading_mode ?? "—"} · {state?.data_mode ?? "…"}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 ${stale ? "text-warn" : "text-muted/70"}`}
+                  title={lastOk ? `Last updated ${lastOk.toLocaleTimeString()}` : "Waiting for backend"}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${stale ? "bg-warn animate-pulse" : "bg-accent"}`}
+                    aria-hidden
+                  />
+                  {stale
+                    ? "stale — reconnecting"
+                    : lastOk
+                      ? `updated ${lastOk.toLocaleTimeString()}`
+                      : "connecting…"}
+                </span>
               </div>
             </div>
             {state && (
@@ -123,11 +145,15 @@ export default function Dashboard() {
               tone="positive"
             />
           </Panel>
-          <Panel title="x402 revenue">
+          <Panel title="x402 revenue (verified)">
             <Stat
-              label="API earned (USDC)"
+              label="On-chain settled (USDC)"
               value={fmtUsd(state?.daily_revenue_usdc)}
-              sub="Idempotent receipts · $0.01 / rationale"
+              sub={
+                (state?.daily_unverified_usdc ?? 0) > 0
+                  ? `+ ${fmtUsd(state?.daily_unverified_usdc)} unverified (excluded)`
+                  : "Settlement-verified · $0.01 / rationale"
+              }
               tone="positive"
             />
           </Panel>
