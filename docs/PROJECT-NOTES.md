@@ -94,7 +94,11 @@ market-implied probability.
 is indexed and checked before revenue is credited: the same settled transfer
 presented against a *different* signal is recorded as `duplicate` (served, no
 revenue), not paid out again. The per-(proof, signal) `receipt_key` only stops
-exact replays; this closes the cross-signal replay.
+exact replays; this closes the cross-signal replay. Known follow-up: the
+consumed-check and the insert aren't one atomic transaction, so two truly
+concurrent requests with the same tx hash could each pass the read before
+either commits — wrap check+insert in a locked transaction or add a DB-level
+uniqueness rule on consuming rows to close that window.
 
 **Quality gate is report-only (for now).** Each sold payload carries a
 `quality` block — the signal's age plus checks for `leakage_ok`, evidence
