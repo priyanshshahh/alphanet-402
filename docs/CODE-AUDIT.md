@@ -1,11 +1,19 @@
 # AlphaNet-402 — code audit
 
-Honest, document-only audit. Nothing here has been fixed — this is a ranked
-list of what's weak, dead, duplicated, or over-engineered, plus specific
-answers to the questions the review asked for (revenue-counter honesty
-surface, yfinance/Tavily error handling and timeouts, frontend state).
-Ranked by **value-to-fix** (impact of the problem × cheapness of the fix),
-highest first.
+Honest, ranked audit of what's weak, dead, duplicated, or over-engineered.
+Ranked by **value-to-fix** (impact × cheapness), highest first.
+
+> **Resolution status (campaign 3).** Most findings below have since been
+> addressed. Fixed: #1 (revenue honesty — verified/unverified now labeled in
+> the UI **and** verified on-chain), #2 (the revenue path has tests —
+> `test_settlement.py`), #3 (LIVE Node dependency now documented in
+> README/PROJECT-NOTES), #4 (`run_cycle` off-loaded via `asyncio.to_thread` /
+> `run_in_threadpool`), #5 (blend weight is now `BAYES_TABLE_WEIGHT` with tests
+> and a corrected docstring), #6 (rationale flow deduped), #7 (`routes.py`
+> split into dashboard/admin/x402 routers), #8 (the three silent excepts now
+> log), #9 (timeouts consolidated to config constants), #10 (frontend
+> stale/error indicator + dead-link removal; a frontend test suite is still
+> absent). The text below is preserved as the original problem statement.
 
 ---
 

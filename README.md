@@ -84,9 +84,26 @@ GET /api/alpha/AAPL/rationale        → 402 + invoice (payTo, USDC, Base CAIP-2
 GET ... + X-Payment: <receipt>       → 200 + prior → evidence → posterior → decision
 ```
 
+The paid payload carries the full causal chain **plus source provenance**
+(the exact yfinance/Tavily links behind that signal). Revenue is booked only
+when the settlement is **verified on-chain** (see below); the agent is also
+discoverable via a Bazaar-style record at `GET /api/x402/discovery`.
+
 A Privy-authorized consumer agent that performs this loop end-to-end lives in
 [`consumer/`](consumer/) (`@privy-io/node` + `@x402/fetch`; the human approves
 once, the key stays in a TEE).
+
+### Settlement verification (revenue is booked on proof, not a header)
+
+Before crediting a sale, the seller extracts the settlement tx hash from the
+`X-Payment` proof and confirms it on Base Sepolia via
+`eth_getTransactionReceipt` (raw JSON-RPC, `SETTLEMENT_RPC_URL`): the tx must
+have succeeded **and** carried a USDC `Transfer` to our payTo for the invoiced
+amount. Only then does `daily_revenue_usdc` move. Payments that can't be
+verified are still served but recorded as `unverified` and **excluded from
+revenue**; demo headers book nothing. The Command Center labels verified vs
+unverified separately, and the **Unit economics** page shows the resulting
+spend-vs-revenue P&L.
 
 ## Honest status
 
@@ -97,19 +114,25 @@ once, the key stays in a TEE).
 - **Demo mode is opt-in and labeled:** `DEMO_MODE=1` swaps in synthetic
   headlines that carry `"demo": true` end-to-end plus a visible UI badge.
   Demo `X-Payment` headers never book revenue.
-- **Not yet implemented:** server-side cryptographic verification of incoming
-  x402 payment receipts (the seller currently trusts the `X-Payment` header),
-  and live order routing. Both are documented in
-  [`docs/PROJECT-NOTES.md`](docs/PROJECT-NOTES.md).
+- **Incoming x402 receipts are now verified on-chain** before booking revenue
+  (`eth_getTransactionReceipt` on Base Sepolia); unverifiable payments are
+  served but excluded from revenue. Live order routing is still not implemented.
+  See [`docs/PROJECT-NOTES.md`](docs/PROJECT-NOTES.md).
+- **LIVE-mode caveat (honest):** the LIVE x402 *purchase* path and CLI wallet
+  resolution shell out to `npx awal` (Node). The documented Render deploy
+  (`render.yaml`, `runtime: python`) does **not** provision Node, so the LIVE
+  buy path is unreachable there by design — set `OUR_AWAL_WALLET_ADDRESS` and
+  use `TAVILY_API_KEY` (REST) or run locally with Node for x402 buys.
 - The 402 seller **refuses to run without a configured wallet** — there is no
   zero-address fallback.
 
 ## Tests & CI
 
-- `cd alphanet-core/backend && pytest tests -q` — **58 offline tests**: Bayesian
-  update math, leakage guards, heuristic parser, mocked Tavily ingestion,
-  budget caps, demo labeling, payment fail-hard behavior, admin-token auth
-  on the control endpoints.
+- `cd alphanet-core/backend && pytest tests -q` — **81 offline tests**: Bayesian
+  update math + the configurable blend, leakage guards, heuristic parser,
+  mocked Tavily ingestion, budget caps, demo labeling, payment fail-hard
+  behavior, admin-token auth, and on-chain settlement verification (verified /
+  unverified / demo revenue paths, tx-hash extraction, USDC transfer matching).
 - GitHub Actions: ruff + pytest + frontend build on every push
   ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 

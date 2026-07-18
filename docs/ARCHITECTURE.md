@@ -25,13 +25,18 @@ alphanet-402/
 │   │   │   ├── database.py       SQLAlchemy engine/session, init_db()
 │   │   │   ├── models.py         AgentState, LogEvent, Signal, X402Receipt
 │   │   │   ├── core/config.py    Pydantic Settings (env-driven)
-│   │   │   ├── api/routes.py     Dashboard API + x402 seller + judge demo
+│   │   │   ├── api/
+│   │   │   │   ├── routes.py     Aggregator: includes the three routers below
+│   │   │   │   ├── dashboard.py  Dashboard API + economics + judge demo
+│   │   │   │   ├── admin.py      Admin control (/api/cycle, /api/reset)
+│   │   │   │   └── x402.py       x402 seller + settlement booking + discovery
 │   │   │   └── modules/
 │   │   │       ├── market_data.py   yfinance fetch + pure feature math
 │   │   │       ├── ingestion.py     Scout orchestration (yfinance/Tavily/demo) + budget
 │   │   │       ├── quant_pipeline.py NLP parse + Bayesian log-odds fusion + leakage guard
+│   │   │       ├── settlement.py    On-chain x402 settlement verification (JSON-RPC)
 │   │   │       └── risk.py          Kill-switches + position sizing
-│   │   ├── tests/                 58 offline pytest tests (see §5)
+│   │   ├── tests/                 81 offline pytest tests (see §5)
 │   │   ├── conftest.py            Isolated sqlite temp DB, neutral settings fixture
 │   │   ├── requirements.txt
 │   │   └── .env.example
@@ -55,10 +60,9 @@ alphanet-402/
 └── package.json                   Root scripts delegate to alphanet-core/frontend
 ```
 
-Note: three files are referenced from the frontend UI but do not exist in
-`docs/` — `DEMO_GUIDE.md` and `PITCH_DECK_PRESENT.md` (linked from
-`pages/PitchDeck.jsx`) and `cdp-llms.txt` (linked from `pages/WalletSetup.jsx`).
-These are leftovers from the pre-divergence project tree. See CODE-AUDIT.md.
+Note: the dead doc links that used to point at non-existent files
+(`DEMO_GUIDE.md`, `PITCH_DECK_PRESENT.md`, `cdp-llms.txt`) were removed from
+the UI in campaign 3.
 
 ---
 
@@ -188,22 +192,26 @@ sequenceDiagram
     end
 ```
 
-**Caveat — incoming receipts are not cryptographically verified.** The
-server never calls an x402 facilitator to check that `X-Payment` corresponds
-to a real, settled on-chain transfer. The only branching logic is a string
-prefix check: anything **not** starting with `demo-` is treated as a real,
-settled payment and books $0.01 of revenue. In practice:
+**Settlement verification (campaign 3).** Before booking revenue for a
+non-`demo-` payment, the seller extracts a settlement tx hash from the
+`X-Payment` proof and confirms it on Base Sepolia via
+`eth_getTransactionReceipt` (`app/modules/settlement.py`, raw JSON-RPC over
+httpx): the tx must have succeeded and carried a USDC `Transfer` to our payTo
+for the invoiced amount. Verified → `daily_revenue_usdc += 0.01`; unverifiable
+→ served but recorded in `daily_unverified_usdc`, **excluded from revenue**;
+demo → nothing booked. The payload carries `payment_status`
+(demo|verified|unverified), `settlement_tx`, and `sources` provenance. In
+practice:
 
 - The Command Center's own "Simulate paid" buttons (`api.js`) hardcode a
   `demo-settlement-proof-*` prefix, so clicking around the UI never inflates
   `daily_revenue_usdc`.
-- The TypeScript `consumer/` agent and any real caller supply whatever string
-  the x402/Privy stack returns as a receipt — the backend trusts it verbatim.
-- `docs/PROJECT-NOTES.md` documents this as known limitation #1 and the
-  README's "Honest status" section calls it out. **It is not surfaced inline
-  in the UI** anywhere `daily_revenue_usdc` or `settled_usdc` is rendered
-  (Dashboard's "x402 revenue" panel, `SignalDetail`'s "Monetize" panel,
-  `SignalDrawer`) — see CODE-AUDIT.md finding #1.
+- The TypeScript `consumer/` agent and any real caller supply an `X-Payment`
+  proof; the backend verifies it on-chain before crediting revenue and never
+  books an unverifiable payment.
+- The Command Center labels verified revenue vs unverified attempts separately
+  (Dashboard "x402 revenue (verified)" panel), and the **Unit economics** page
+  renders the spend-vs-verified-revenue P&L from the ledger.
 
 The outbound (buyer) direction — `ingestion.py::_live_pay` — shells out to
 `npx awal x402 pay <url> --max-amount <atomic> --json` and parses stdout for
@@ -230,6 +238,9 @@ All configuration is env-driven via `pydantic_settings.BaseSettings`
 | `MAX_DAILY_SPEND_USDC` | `2.00` | Hard daily scout budget (kill-switch) |
 | `MAX_PRICE_PER_SEARCH_USDC` | `0.01` | Hard per-query price cap |
 | `EDGE_THRESHOLD` | `0.05` | Minimum `\|edge\|` to act (else HOLD) |
+| `BAYES_TABLE_WEIGHT` | `0.65` | Convex blend weight on the evidence-table posterior; sentiment channel gets the remainder |
+| `SETTLEMENT_RPC_URL` | `https://sepolia.base.org` | Base RPC for sell-side settlement verification; empty ⇒ verification off (non-demo sales record `unverified`) |
+| `SCOUT_HTTP_TIMEOUT_SECONDS` / `AWAL_PAY_TIMEOUT_SECONDS` / `AWAL_ADDRESS_TIMEOUT_SECONDS` | `15` / `45` / `20` | Bounded timeouts for yfinance+Tavily HTTP, the awal pay subprocess, and awal address resolution |
 | `DAILY_DRAWDOWN_LIMIT_USDC` | `5.00` | Halts the loop when breached |
 | `TAVILY_402_ENDPOINT` / `TAVILY_REST_ENDPOINT` | tavily.com URLs | Paid news gateways |
 | `TAVILY_API_KEY` | empty | Present + not a placeholder → REST path wins over x402 |
@@ -268,15 +279,22 @@ alphanet-core/backend/
     │                              _merge_results; scout failure paths.
     ├── test_quant_math.py         bayesian_update, the log-odds evidence
     │                              table, leakage guard, heuristic NLP
-    │                              parser, run_quant integration.
+    │                              parser, run_quant integration + the
+    │                              config-driven blend math.
+    ├── test_settlement.py         On-chain settlement verification: tx-hash
+    │                              extraction (raw/JSON/base64), USDC transfer
+    │                              matching, RPC verdicts (mocked httpx), and
+    │                              the full verified/unverified/demo revenue
+    │                              paths + idempotency + provenance.
     └── test_demo_and_config.py    Demo-mode labeling end-to-end; payment
                                    fail-hard (resolve_pay_to, 503/402);
-                                   demo X-Payment books no revenue; CORS
-                                   allowlist behavior; admin-token auth on
+                                   demo X-Payment books no revenue; unit
+                                   economics endpoint; x402 discovery doc;
+                                   CORS allowlist; admin-token auth on
                                    /api/reset and /api/cycle.
 ```
 
-58 tests total, all offline (network calls mocked or routed through
+81 tests total, all offline (network calls mocked or routed through
 deterministic code paths), run in well under a second: `pytest tests -q`.
 `ruff check .` is clean. Both are also enforced in CI
 (`.github/workflows/ci.yml`) on push to `main`/`diverge-equities` and on PRs,

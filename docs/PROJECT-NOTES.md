@@ -41,20 +41,54 @@ market-implied probability.
   need `Authorization: Bearer $ADMIN_TOKEN`. No `ADMIN_TOKEN` set → both
   return 503 (disabled) rather than being open to an unauthenticated caller;
   wrong/missing token → 401. Token comparison is constant-time.
+- Sell-side settlement verification: before booking revenue for a non-`demo-`
+  sale, the seller extracts the settlement tx hash from the `X-Payment` proof
+  and confirms it on Base Sepolia via `eth_getTransactionReceipt`
+  (`SETTLEMENT_RPC_URL`, raw JSON-RPC over httpx — no web3.py). The tx must
+  have succeeded and carried a USDC `Transfer` to our payTo for the invoiced
+  amount. Verified → `daily_revenue_usdc += 0.01`; unverifiable → served but
+  recorded in `daily_unverified_usdc` and **excluded from revenue**; demo →
+  nothing booked. Empty `SETTLEMENT_RPC_URL` disables verification (everything
+  non-demo then records as `unverified`).
 
 ## Known limitations (honest list)
 
-1. **Incoming x402 receipts are not cryptographically verified.** Any
-   non-`demo-` `X-Payment` header settles a sale. Wiring a facilitator
-   verification call is the next real milestone before charging anyone.
-2. **Paper trading only.** Position sizes are notional (1,000 USDC demo
+1. **Incoming x402 receipts are now verified on-chain (was limitation #1).**
+   Revenue is booked on proof of settlement, not a trusted header; unverifiable
+   payments are excluded from the revenue counter. Verification depends on a
+   reachable Base RPC and a settlement tx hash being present in the proof — in
+   a full production x402 flow that hash comes from the facilitator's `settle`
+   response.
+2. **LIVE x402 *purchase* requires Node in the runtime.** The buy path
+   (`ingestion._live_pay`) and CLI wallet resolution (`resolve_pay_to`) shell
+   out to `npx awal` (Node). The documented Render deploy (`render.yaml`,
+   `runtime: python`) does not provision Node, so the LIVE buy path is
+   unreachable there — it hits `FileNotFoundError` and degrades to `paid=False`.
+   This is fine by design (testnet + paper), but do not read the LIVE path as
+   working on the Render blueprint. Set `OUR_AWAL_WALLET_ADDRESS` explicitly
+   and prefer `TAVILY_API_KEY` (REST) there, or run locally with Node for
+   actual x402 buys.
+3. **Paper trading only.** Position sizes are notional (1,000 USDC demo
    bankroll, 10% cap, fractional-Kelly scaling). No broker integration.
-3. **Signals are directional beliefs, not calibrated forecasts.** The
+4. **Signals are directional beliefs, not calibrated forecasts.** The
    log-odds evidence weights are hand-set, not fitted; no backtest is claimed.
-4. **yfinance is an unofficial Yahoo API** — fine for a research agent, not a
+   The two Bayesian channels are blended at a fixed, config-driven weight
+   (`BAYES_TABLE_WEIGHT`, default 0.65), not a learned one.
+5. **yfinance is an unofficial Yahoo API** — fine for a research agent, not a
    production market-data contract. Tavily is the paid upgrade path.
-5. **SQLite on Render free tier is ephemeral** (`/tmp`); state resets on
+6. **SQLite on Render free tier is ephemeral** (`/tmp`); state resets on
    redeploy. Acceptable: signals regenerate each cycle.
+
+## New surfaces (campaign 3)
+
+- `GET /api/economics` + **Unit economics** page — real self-funding P&L from
+  the SPEND/REVENUE ledger (spend vs verified revenue, margins, break-even).
+- **Methodology** page — prior→posterior→edge, the configurable blend, data
+  sources, limitations, and a not-investment-advice disclaimer.
+- `GET /api/x402/discovery` — Bazaar-style discovery record so agents can find
+  and price the seller endpoint.
+- Paid rationale payload now carries `sources` (provenance) and
+  `payment_status` (demo | verified | unverified).
 
 ## Verified runs (2026-07-12)
 
@@ -65,9 +99,10 @@ market-implied probability.
   Tavily news results; Groq extracted features; posterior moved 0.490 → 0.539
   (edge +0.0485 → HOLD). API keys were provided at runtime only and are not in
   the repo or its history.
-- Test suite: 58/58 passing offline in <1s (`pytest tests -q`), including
-  admin-token auth coverage on `/api/reset` and `/api/cycle` added on
-  2026-07-16 as a security-review follow-up.
+- Test suite: 81/81 passing offline in <1s (`pytest tests -q`), including
+  admin-token auth coverage on `/api/reset` and `/api/cycle`, and on-chain
+  settlement verification (verified/unverified/demo revenue paths, tx-hash
+  extraction, USDC transfer matching) added in campaign 3.
 
 ## Deploy
 
