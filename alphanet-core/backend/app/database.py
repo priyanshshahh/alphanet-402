@@ -1,10 +1,13 @@
 """SQLite + SQLAlchemy engine/session wiring."""
 from __future__ import annotations
 
+import logging
 import os
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
+
+_log = logging.getLogger("alphanet.db")
 
 DB_PATH = os.environ.get(
     "ALPHANET_DB_PATH",
@@ -50,5 +53,8 @@ def init_db() -> None:
             "signals", "nlp_features_json", "nlp_features_json TEXT"
         )
         _sqlite_add_column_if_missing("signals", "evidence_json", "evidence_json TEXT")
-    except Exception:
-        pass
+    except Exception as exc:
+        # Ephemeral on the Render free tier, so low-stakes there — but on a
+        # developer's persisted alphanet.db a genuine migration failure (locked
+        # file, permissions) should not be invisible.
+        _log.warning("SQLite lightweight column migration failed: %s", exc)

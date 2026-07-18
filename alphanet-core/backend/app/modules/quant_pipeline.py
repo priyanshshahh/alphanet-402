@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import math
 import re
 from dataclasses import dataclass, field
@@ -19,6 +20,8 @@ from typing import Any, Dict, List, Optional
 
 from app.core.config import settings
 from app.modules.ingestion import ScoutResult
+
+_log = logging.getLogger("alphanet.quant")
 
 
 @dataclass
@@ -104,7 +107,11 @@ def _groq_extract(text: str) -> Optional[Dict[str, Any]]:
         )
         raw = resp.choices[0].message.content or "{}"
         return _coerce_extended(json.loads(raw))
-    except Exception:
+    except Exception as exc:
+        # Fall back to the deterministic heuristic, but make the failure
+        # observable — a silently-failing Groq key (wrong model, expired,
+        # rate-limited) would otherwise look identical to "no key configured".
+        _log.warning("Groq extraction failed, using heuristic parser: %s", exc)
         return None
 
 

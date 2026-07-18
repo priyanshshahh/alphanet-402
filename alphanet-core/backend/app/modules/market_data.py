@@ -10,7 +10,10 @@ over plain Python lists/dicts so the pipeline is testable fully offline.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+_log = logging.getLogger("alphanet.market_data")
 
 
 class MarketDataError(Exception):
@@ -189,8 +192,11 @@ def fetch_equity_events(ticker: str) -> Tuple[List[Dict[str, Any]], float]:
                 "heldPercentInstitutions",
             )
         }
-    except Exception:
-        # Fundamentals are best-effort; price/trend events alone are fine.
+    except Exception as exc:
+        # Fundamentals are best-effort; price/trend events alone are fine. Log
+        # so a systematic t.info failure (Yahoo shape change, throttling) is
+        # visible instead of quietly degrading every signal to price-only.
+        _log.warning("fundamentals fetch failed for %s (using price/trend only): %s", ticker, exc)
         fundamentals = {}
 
     return build_events(ticker, feats, fundamentals), estimate_prior(
