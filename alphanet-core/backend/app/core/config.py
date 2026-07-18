@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     # Extra CLI tokens appended after `npx awal x402 pay ...` (chain / flags for your awal version)
     AWAL_X402_PAY_EXTRA: str = "--chain base-sepolia"
 
+    # Network timeouts (seconds). The two HTTP scout paths (yfinance history,
+    # Tavily REST) share one ceiling kept *below* LOOP_INTERVAL_SECONDS so a
+    # hung endpoint can't make one scout cycle routinely overrun the next
+    # cycle's scheduled start. The awal subprocess pay is only reachable in
+    # LIVE mode; its ceiling is deliberately looser (a real settlement round
+    # trip is slower) but still bounded.
+    SCOUT_HTTP_TIMEOUT_SECONDS: float = 15.0  # yfinance history + Tavily REST
+    AWAL_PAY_TIMEOUT_SECONDS: float = 45.0  # `npx awal x402 pay` subprocess
+    AWAL_ADDRESS_TIMEOUT_SECONDS: float = 20.0  # `npx awal address` resolution
+
     # Guardrails (documented in docs/PROJECT-NOTES.md)
     MAX_DAILY_SPEND_USDC: float = 2.00
     MAX_PRICE_PER_SEARCH_USDC: float = 0.01

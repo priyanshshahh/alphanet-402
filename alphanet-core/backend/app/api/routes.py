@@ -51,7 +51,7 @@ def resolve_pay_to() -> str:
             ["npx", "awal", "address", "--json"],
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=settings.AWAL_ADDRESS_TIMEOUT_SECONDS,
         )
         if proc.returncode == 0:
             data = json.loads(proc.stdout.strip() or "{}")

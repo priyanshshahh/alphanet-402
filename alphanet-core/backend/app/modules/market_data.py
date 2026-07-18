@@ -155,9 +155,16 @@ def fetch_equity_events(ticker: str) -> Tuple[List[Dict[str, Any]], float]:
     except ImportError as exc:  # pragma: no cover
         raise MarketDataError(f"yfinance not installed: {exc}") from exc
 
+    from app.core.config import settings
+
     try:
         t = yf.Ticker(ticker)
-        hist = t.history(period="7mo", interval="1d", auto_adjust=True)
+        hist = t.history(
+            period="7mo",
+            interval="1d",
+            auto_adjust=True,
+            timeout=settings.SCOUT_HTTP_TIMEOUT_SECONDS,
+        )
     except Exception as exc:
         raise MarketDataError(f"yfinance history failed for {ticker}: {exc}") from exc
 

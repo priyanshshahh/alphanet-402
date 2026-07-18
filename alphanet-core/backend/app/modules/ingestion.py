@@ -191,7 +191,7 @@ class EquityScout:
             "topic": "finance",
         }
         try:
-            with httpx.Client(timeout=60.0) as client:
+            with httpx.Client(timeout=settings.SCOUT_HTTP_TIMEOUT_SECONDS) as client:
                 r = client.post(settings.TAVILY_REST_ENDPOINT, json=body)
             if r.status_code != 200:
                 self._log_error(
@@ -250,7 +250,10 @@ class EquityScout:
             cmd.extend(shlex.split(extra))
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=120
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=settings.AWAL_PAY_TIMEOUT_SECONDS,
             )
             if proc.returncode != 0:
                 self._log_error(
