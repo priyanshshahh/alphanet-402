@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     EDGE_THRESHOLD: float = 0.05
     DAILY_DRAWDOWN_LIMIT_USDC: float = 5.00
 
+    # Quant blend weight on the evidence-table posterior; the sentiment-only
+    # channel takes the remaining (1 - weight). Applied on every decision — see
+    # quant_pipeline.run_quant. 1.0 = table only, 0.0 = sentiment only.
+    BAYES_TABLE_WEIGHT: float = 0.65
+
     # x402 keyless gateways + optional REST (plan credits)
     TAVILY_402_ENDPOINT: str = "https://402.tavily.com/v1/search"
     TAVILY_REST_ENDPOINT: str = "https://api.tavily.com/search"

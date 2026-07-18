@@ -244,7 +244,13 @@ def calculate_chf_leakage_safe_edge(
 
 
 def bayesian_update(prior: float, sentiment: str, confidence: float) -> float:
-    """Legacy sentiment-only log-odds bump (used as fallback tie-break)."""
+    """Sentiment-only log-odds channel.
+
+    NOT a tie-break: run_quant blends this into the evidence-table posterior on
+    *every* decision at weight (1 - settings.BAYES_TABLE_WEIGHT). It moves the
+    prior by ±2.2·confidence in log-odds for bullish/bearish, and is a no-op for
+    neutral or zero confidence.
+    """
     prior = _clip(prior)
     prior_log_odds = math.log(prior / (1 - prior))
     strength = 2.2 * confidence
@@ -315,9 +321,12 @@ def run_quant(scout: ScoutResult) -> QuantSignal:
     feat_subset = {k: parsed[k] for k in parsed if k != "whale_action"}
 
     posterior_tbl, edge_tbl, ll_sum = calculate_chf_leakage_safe_edge(prior, feat_subset)
-    # Blend: table-driven posterior slightly mixed with sentiment channel for demo stability.
+    # Fixed convex blend of the two posteriors on every decision: the
+    # evidence-table channel at BAYES_TABLE_WEIGHT, the sentiment channel at the
+    # remainder. Weight is config-driven (settings.BAYES_TABLE_WEIGHT).
     posterior_sent = bayesian_update(prior, parsed["sentiment"], parsed["confidence"])
-    posterior = _clip(0.65 * posterior_tbl + 0.35 * posterior_sent)
+    w = settings.BAYES_TABLE_WEIGHT
+    posterior = _clip(w * posterior_tbl + (1.0 - w) * posterior_sent)
     edge = posterior - prior
 
     decision_at = dt.datetime.now(dt.timezone.utc)

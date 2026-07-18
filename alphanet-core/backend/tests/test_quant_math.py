@@ -175,3 +175,46 @@ def test_run_quant_uses_real_market_prior():
 def test_run_quant_hold_when_no_edge():
     sig = run_quant(_scout("Nothing notable happened today.", market_prior=0.5))
     assert sig.decision == "HOLD"
+
+
+def test_run_quant_blend_matches_configured_weight(monkeypatch):
+    """The posterior is the exact convex blend of the two channels at
+    settings.BAYES_TABLE_WEIGHT — pin it so the split can't silently drift."""
+    from app.core.config import settings
+    from app.modules.quant_pipeline import (
+        _clip,
+        _coerce_extended,
+        parse_sentiment,
+    )
+
+    monkeypatch.setattr(settings, "BAYES_TABLE_WEIGHT", 0.65)
+    scout = _scout(
+        "Technical read: bullish. CEO reported buying; institutional accumulation.",
+        market_prior=0.5,
+    )
+    parsed = parse_sentiment(scout)
+    feat = _coerce_extended(parsed)
+    subset = {k: feat[k] for k in feat if k != "whale_action"}
+
+    post_tbl, _, _ = calculate_chf_leakage_safe_edge(0.5, subset)
+    post_sent = bayesian_update(0.5, feat["sentiment"], feat["confidence"])
+    expected = round(_clip(0.65 * post_tbl + 0.35 * post_sent), 4)
+
+    sig = run_quant(scout)
+    assert sig.posterior == pytest.approx(expected)
+
+
+def test_run_quant_blend_weight_is_config_driven(monkeypatch):
+    """Table-only weight (1.0) must drop the sentiment channel entirely."""
+    from app.core.config import settings
+
+    scout = _scout(
+        "Technical read: bullish. CEO reported buying; institutional accumulation.",
+        market_prior=0.5,
+    )
+    monkeypatch.setattr(settings, "BAYES_TABLE_WEIGHT", 1.0)
+    table_only = run_quant(scout).posterior
+    monkeypatch.setattr(settings, "BAYES_TABLE_WEIGHT", 0.65)
+    blended = run_quant(scout).posterior
+    # Sentiment channel is bullish here, so its inclusion lifts the posterior.
+    assert blended > table_only
