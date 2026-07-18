@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     # rationale over x402 is refused until the operator sets a real address.
     OUR_AWAL_WALLET_ADDRESS: str = ""
 
+    # Sell-side settlement verification: before booking revenue for a non-demo
+    # x402 sale, confirm the payment settled on-chain (eth_getTransactionReceipt
+    # against Base Sepolia). Default is a public Base Sepolia RPC; set empty to
+    # disable verification (every non-demo sale then records as `unverified`
+    # and is excluded from revenue).
+    SETTLEMENT_RPC_URL: str = "https://sepolia.base.org"
+
     # Inference (Groq = free-tier NLP extraction only; never portfolio math)
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"

@@ -24,6 +24,8 @@ def _neutral_settings(monkeypatch):
     monkeypatch.setattr(settings, "TAVILY_API_KEY", "")
     monkeypatch.setattr(settings, "GROQ_API_KEY", "")
     monkeypatch.setattr(settings, "OUR_AWAL_WALLET_ADDRESS", "")
+    # Offline by default: no settlement RPC unless a test opts in and mocks it.
+    monkeypatch.setattr(settings, "SETTLEMENT_RPC_URL", "")
     monkeypatch.setattr(settings, "MAX_DAILY_SPEND_USDC", 2.00)
     monkeypatch.setattr(settings, "MAX_PRICE_PER_SEARCH_USDC", 0.01)
     monkeypatch.setattr(settings, "EDGE_THRESHOLD", 0.05)

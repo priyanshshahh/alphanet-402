@@ -24,6 +24,7 @@ from app import agent_loop
 from app.core.config import settings
 from app.database import SessionLocal
 from app.models import AgentState, LogEvent, Signal, X402Receipt, today_key
+from app.modules.settlement import SettlementVerdict, verify_settlement
 
 router = APIRouter()
 
@@ -123,6 +124,7 @@ def _agent_state_payload(db: Session) -> dict:
         state.day_key = today_key()
         state.daily_spend_usdc = 0.0
         state.daily_revenue_usdc = 0.0
+        state.daily_unverified_usdc = 0.0
         state.daily_drawdown_usdc = 0.0
         db.commit()
     remaining = max(0.0, settings.MAX_DAILY_SPEND_USDC - state.daily_spend_usdc)
@@ -141,6 +143,7 @@ def _agent_state_payload(db: Session) -> dict:
         "daily_budget_usdc": settings.MAX_DAILY_SPEND_USDC,
         "daily_budget_remaining_usdc": round(remaining, 4),
         "daily_revenue_usdc": round(state.daily_revenue_usdc, 4),
+        "daily_unverified_usdc": round(state.daily_unverified_usdc or 0.0, 4),
         "realized_pnl_usdc": round(state.realized_pnl_usdc, 4),
         "daily_drawdown_usdc": round(state.daily_drawdown_usdc, 4),
         "drawdown_limit_usdc": settings.DAILY_DRAWDOWN_LIMIT_USDC,
@@ -167,7 +170,15 @@ def _is_demo_proof(x_payment: str) -> bool:
     return (x_payment or "").strip().lower().startswith("demo-")
 
 
-def _causal_payload(sig: Signal, x_payment: str) -> dict:
+def _payment_status(x_payment: str, verdict: Optional[SettlementVerdict]) -> str:
+    if _is_demo_proof(x_payment):
+        return "demo"
+    return verdict.status if verdict else "unverified"
+
+
+def _causal_payload(
+    sig: Signal, x_payment: str, verdict: Optional[SettlementVerdict]
+) -> dict:
     nlp = {}
     ev = {}
     try:
@@ -178,12 +189,17 @@ def _causal_payload(sig: Signal, x_payment: str) -> dict:
         ev = json.loads(sig.evidence_json or "{}")
     except json.JSONDecodeError:
         pass
-    demo = _is_demo_proof(x_payment)
+    status = _payment_status(x_payment, verdict)
     return {
         "ticker": sig.ticker,
         "signal_id": sig.id,
-        "settled_usdc": 0.0 if demo else ALPHA_PRICE_USDC,
-        "demo_payment": demo,
+        # settled_usdc is booked as revenue ONLY for a verified on-chain
+        # settlement. Demo and unverified payments are served but count $0.
+        "settled_usdc": ALPHA_PRICE_USDC if status == "verified" else 0.0,
+        "payment_status": status,  # demo | verified | unverified
+        "demo_payment": status == "demo",
+        "settlement_tx": verdict.tx_hash if verdict else "",
+        "settlement_note": verdict.reason if verdict else "",
         "network": settings.NETWORK_CAIP_ID,
         "payment_proof_prefix": (x_payment or "")[:64],
         "causal_chain": {
@@ -200,10 +216,31 @@ def _causal_payload(sig: Signal, x_payment: str) -> dict:
     }
 
 
+def _verify_payment(x_payment: str) -> SettlementVerdict:
+    """On-chain settlement check for a non-demo x402 proof."""
+    try:
+        pay_to = resolve_pay_to()
+    except PaymentConfigError:
+        pay_to = ""
+    return verify_settlement(
+        x_payment=x_payment,
+        pay_to=pay_to,
+        usdc_contract=settings.USDC_CONTRACT_ADDRESS,
+        min_atomic=int(ALPHA_PRICE_ATOMIC),
+        rpc_url=settings.SETTLEMENT_RPC_URL,
+    )
+
+
 def _settle_rationale_sale(
     db, sig: Signal, ticker: str, x_payment: str
 ) -> dict:
-    """Record revenue once per (payment proof, signal) pair; return causal JSON."""
+    """Serve the causal chain; book revenue only for a *verified* settlement.
+
+    Idempotent per (payment proof, signal) pair. Three outcomes:
+      * demo      — x402 Lab header, served, never booked.
+      * verified  — settlement confirmed on-chain, +$0.01 revenue.
+      * unverified — served, recorded separately, excluded from revenue.
+    """
     key = _receipt_key(x_payment, sig.id)
     existing = db.query(X402Receipt).filter(X402Receipt.receipt_key == key).first()
     if existing:
@@ -212,12 +249,17 @@ def _settle_rationale_sale(
         except json.JSONDecodeError:
             pass
 
-    body = _causal_payload(sig, x_payment)
     demo = _is_demo_proof(x_payment)
+    verdict = None if demo else _verify_payment(x_payment)
+    body = _causal_payload(sig, x_payment, verdict)
+
+    state = db.get(AgentState, 1)
+    if state is not None and state.day_key != today_key():
+        state.day_key = today_key()
+        state.daily_revenue_usdc = 0.0
+        state.daily_unverified_usdc = 0.0
 
     if demo:
-        # Demo header from the x402 Lab UI: return the causal chain, but never
-        # book revenue for a payment that did not settle on-chain.
         db.add(
             LogEvent(
                 level="INFO",
@@ -230,27 +272,44 @@ def _settle_rationale_sale(
                 amount_usdc=0.0,
             )
         )
-    else:
-        state = db.get(AgentState, 1)
-        if state.day_key != today_key():
-            state.day_key = today_key()
-            state.daily_revenue_usdc = 0.0
+        booked = 0.0
+    elif verdict.verified:
         state.daily_revenue_usdc = float(state.daily_revenue_usdc) + ALPHA_PRICE_USDC
         db.add(
             LogEvent(
                 level="REVENUE",
                 category="X402",
                 ticker=ticker,
-                message=f"Sold alpha rationale for signal #{sig.id} ({ticker}) $0.01",
+                message=(
+                    f"Sold alpha rationale for signal #{sig.id} ({ticker}) $0.01 "
+                    f"— settlement verified (tx {verdict.tx_hash[:12]}…)"
+                ),
                 amount_usdc=ALPHA_PRICE_USDC,
             )
         )
+        booked = ALPHA_PRICE_USDC
+    else:
+        state.daily_unverified_usdc = float(state.daily_unverified_usdc) + ALPHA_PRICE_USDC
+        db.add(
+            LogEvent(
+                level="WARN",
+                category="X402",
+                ticker=ticker,
+                message=(
+                    f"Served rationale for signal #{sig.id} ({ticker}) against an "
+                    f"UNVERIFIED payment — no revenue booked ({verdict.reason})"
+                ),
+                amount_usdc=0.0,
+            )
+        )
+        booked = 0.0
+
     db.add(
         X402Receipt(
             receipt_key=key,
             signal_id=sig.id,
             ticker=ticker,
-            amount_usdc=0.0 if demo else ALPHA_PRICE_USDC,
+            amount_usdc=booked,
             payload_json=json.dumps(body),
         )
     )
@@ -369,6 +428,7 @@ def reset_day(
             state.day_key = today_key()
             state.daily_spend_usdc = 0.0
             state.daily_revenue_usdc = 0.0
+            state.daily_unverified_usdc = 0.0
             state.daily_drawdown_usdc = 0.0
             db.commit()
         return {"ok": True}
@@ -480,14 +540,9 @@ def _invoice_payload() -> dict:
     }
 
 
-@router.get("/api/alpha/{ticker}/rationale")
-def alpha_rationale(
-    ticker: str,
-    x_payment: Optional[str] = Header(default=None, alias="X-Payment"),
-):
-    ticker = ticker.upper()
-
-    # Unpaid request -> issue a 402 invoice (network from settings, default Base Sepolia).
+def _handle_rationale_request(x_payment, sig_lookup, not_found_msg):
+    """Shared 402-invoice / settle flow for both rationale endpoints, differing
+    only in how the target signal is looked up."""
     if not x_payment:
         try:
             invoice = _invoice_payload()
@@ -499,24 +554,32 @@ def alpha_rationale(
             headers={"Accept-Payment": "x402"},
         )
 
-    # Paid request -> settle revenue and return the full causal chain.
     db = SessionLocal()
     try:
-        sig = (
+        sig = sig_lookup(db)
+        if sig is None:
+            return JSONResponse(status_code=404, content={"error": not_found_msg})
+        return _settle_rationale_sale(db, sig, sig.ticker, x_payment)
+    finally:
+        db.close()
+
+
+@router.get("/api/alpha/{ticker}/rationale")
+def alpha_rationale(
+    ticker: str,
+    x_payment: Optional[str] = Header(default=None, alias="X-Payment"),
+):
+    ticker = ticker.upper()
+    return _handle_rationale_request(
+        x_payment,
+        lambda db: (
             db.query(Signal)
             .filter(Signal.ticker == ticker)
             .order_by(desc(Signal.ts))
             .first()
-        )
-        if sig is None:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"No rationale computed yet for {ticker}"},
-            )
-
-        return _settle_rationale_sale(db, sig, ticker, x_payment)
-    finally:
-        db.close()
+        ),
+        f"No rationale computed yet for {ticker}",
+    )
 
 
 @router.get("/api/trade/{signal_id}/rationale")
@@ -525,25 +588,8 @@ def trade_rationale_by_id(
     x_payment: Optional[str] = Header(default=None, alias="X-Payment"),
 ):
     """Blueprint alias: monetize rationale for a specific stored signal row."""
-    if not x_payment:
-        try:
-            invoice = _invoice_payload()
-        except PaymentConfigError:
-            return _payments_unavailable()
-        return JSONResponse(
-            status_code=402,
-            content=invoice,
-            headers={"Accept-Payment": "x402"},
-        )
-
-    db = SessionLocal()
-    try:
-        sig = db.get(Signal, signal_id)
-        if sig is None:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"No signal #{signal_id}"},
-            )
-        return _settle_rationale_sale(db, sig, sig.ticker, x_payment)
-    finally:
-        db.close()
+    return _handle_rationale_request(
+        x_payment,
+        lambda db: db.get(Signal, signal_id),
+        f"No signal #{signal_id}",
+    )

@@ -43,7 +43,8 @@ class AgentState(Base):
     # Cumulative daily spend tracking (resets per day_key)
     day_key = Column(String, default=today_key)
     daily_spend_usdc = Column(Float, default=0.0)
-    daily_revenue_usdc = Column(Float, default=0.0)
+    daily_revenue_usdc = Column(Float, default=0.0)  # verified settlements only
+    daily_unverified_usdc = Column(Float, default=0.0)  # served but unverified
     realized_pnl_usdc = Column(Float, default=0.0)
     daily_drawdown_usdc = Column(Float, default=0.0)
 

@@ -53,6 +53,11 @@ def init_db() -> None:
             "signals", "nlp_features_json", "nlp_features_json TEXT"
         )
         _sqlite_add_column_if_missing("signals", "evidence_json", "evidence_json TEXT")
+        _sqlite_add_column_if_missing(
+            "agent_state",
+            "daily_unverified_usdc",
+            "daily_unverified_usdc FLOAT DEFAULT 0.0",
+        )
     except Exception as exc:
         # Ephemeral on the Render free tier, so low-stakes there — but on a
         # developer's persisted alphanet.db a genuine migration failure (locked
