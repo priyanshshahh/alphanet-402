@@ -117,6 +117,32 @@ def test_demo_payment_header_books_no_revenue(db, monkeypatch):
     assert state.daily_revenue_usdc == 0.0
 
 
+# --- unit economics --------------------------------------------------------
+def test_economics_reads_the_ledger(db):
+    from app.models import LogEvent, Signal
+
+    db.add(LogEvent(level="SPEND", category="X402", ticker="AAPL", message="Tavily x402", amount_usdc=-0.01))
+    db.add(LogEvent(level="SPEND", category="X402", ticker="MSFT", message="Tavily x402", amount_usdc=-0.01))
+    db.add(LogEvent(level="REVENUE", category="X402", ticker="AAPL", message="Sold rationale — verified", amount_usdc=0.01))
+    db.add(LogEvent(level="WARN", category="X402", ticker="NVDA", message="UNVERIFIED payment — no revenue", amount_usdc=0.0))
+    db.add(Signal(ticker="AAPL", decision="BUY"))
+    db.commit()
+
+    client = TestClient(app)
+    r = client.get("/api/economics")
+    assert r.status_code == 200
+    body = r.json()
+    cum = body["cumulative"]
+    assert cum["spend_usdc"] == pytest.approx(0.02)
+    assert cum["revenue_usdc"] == pytest.approx(0.01)
+    assert cum["purchases"] == 2
+    assert cum["sales_verified"] == 1
+    assert cum["sales_unverified"] == 1
+    assert body["net_margin_usdc"] == pytest.approx(-0.01)
+    assert body["break_even"] is False
+    assert len(body["ledger"]) == 3  # 2 spend + 1 revenue, WARN excluded
+
+
 # --- CORS ------------------------------------------------------------------
 def _cors_middleware():
     from fastapi.middleware.cors import CORSMiddleware

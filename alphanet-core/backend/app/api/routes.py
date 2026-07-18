@@ -389,6 +389,70 @@ def get_signal(signal_id: int):
         db.close()
 
 
+@router.get("/api/economics")
+def get_economics():
+    """Unit economics from the append-only log_events ledger — the agent's
+    real self-funding P&L. Spend = USDC burned buying data (SPEND rows);
+    revenue = *verified* x402 sales (REVENUE rows). All-time, real logged
+    numbers only; unverified sales are reported separately and never counted
+    as revenue."""
+    db = SessionLocal()
+    try:
+        spend_rows = db.query(LogEvent).filter(LogEvent.level == "SPEND").all()
+        revenue_rows = db.query(LogEvent).filter(LogEvent.level == "REVENUE").all()
+        unverified = (
+            db.query(LogEvent)
+            .filter(LogEvent.level == "WARN", LogEvent.category == "X402")
+            .filter(LogEvent.message.like("%UNVERIFIED%"))
+            .count()
+        )
+        signals_produced = db.query(Signal).count()
+
+        total_spend = round(sum(abs(r.amount_usdc or 0.0) for r in spend_rows), 6)
+        total_revenue = round(sum(r.amount_usdc or 0.0 for r in revenue_rows), 6)
+        purchases = len(spend_rows)
+        sales = len(revenue_rows)
+
+        def _safe_div(a, b):
+            return round(a / b, 6) if b else 0.0
+
+        ledger = [
+            {
+                "ts": e.ts.isoformat() if e.ts else None,
+                "kind": e.level,
+                "category": e.category,
+                "ticker": e.ticker,
+                "amount_usdc": e.amount_usdc,
+                "message": e.message,
+            }
+            for e in sorted(
+                spend_rows + revenue_rows,
+                key=lambda x: x.ts or datetime.min.replace(tzinfo=timezone.utc),
+                reverse=True,
+            )[:30]
+        ]
+
+        return {
+            "currency": "USDC",
+            "net_margin_usdc": round(total_revenue - total_spend, 6),
+            "break_even": total_revenue >= total_spend,
+            "cumulative": {
+                "spend_usdc": total_spend,
+                "revenue_usdc": total_revenue,
+                "purchases": purchases,
+                "sales_verified": sales,
+                "sales_unverified": unverified,
+                "signals_produced": signals_produced,
+                "avg_cost_per_purchase_usdc": _safe_div(total_spend, purchases),
+                "avg_revenue_per_sale_usdc": _safe_div(total_revenue, sales),
+                "cost_per_signal_usdc": _safe_div(total_spend, signals_produced),
+            },
+            "ledger": ledger,
+        }
+    finally:
+        db.close()
+
+
 @router.get("/api/logs")
 def get_logs(limit: int = 40):
     db = SessionLocal()
